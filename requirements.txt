@@ -1,0 +1,2 @@
+# Format experiment only; desktop dependencies have not been selected/pinned.
+cryptography==50.0.0

@@ -1,0 +1,198 @@
+[
+  {
+    "repo": "FilmColors/VIAN",
+    "url": "https://raw.githubusercontent.com/FilmColors/VIAN/master/README.md",
+    "commit": "bb680b710b84ec75425d7d1f4bb71830e331dd37",
+    "readme_url": "https://raw.githubusercontent.com/FilmColors/VIAN/bb680b710b84ec75425d7d1f4bb71830e331dd37/README.md",
+    "readme_sha256": "6e98e2e301d5e112c5dfa2e6378a1b28c45a687284655d7fe23abd9664c35eb4",
+    "license_url": "https://raw.githubusercontent.com/FilmColors/VIAN/bb680b710b84ec75425d7d1f4bb71830e331dd37/LICENSE.txt",
+    "license_sha256": "2d7ec08c16bf97dee9a4343bc5ee8773e5d5fa84ed080c5365cb63d37b0a0171",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "cvat-ai/cvat",
+    "url": "https://raw.githubusercontent.com/cvat-ai/cvat/master/README.md",
+    "commit": "3379911b802f7331e6a54a2a856f8d4c49085642",
+    "readme_url": "https://raw.githubusercontent.com/cvat-ai/cvat/3379911b802f7331e6a54a2a856f8d4c49085642/README.md",
+    "readme_sha256": "4237a463860dd61563f9e89fce60c732b4c7ed2a4ee3963b5c4c960293bbd221",
+    "license_url": "https://raw.githubusercontent.com/cvat-ai/cvat/3379911b802f7331e6a54a2a856f8d4c49085642/LICENSE",
+    "license_sha256": "f0c98c1710670f97a3dfab70829ec8739c12898463a6eb1bbddfc21821ae9c63",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "HumanSignal/label-studio",
+    "url": "https://raw.githubusercontent.com/HumanSignal/label-studio/master/README.md",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "voxel51/fiftyone",
+    "url": "https://raw.githubusercontent.com/voxel51/fiftyone/main/README.md",
+    "commit": "4b915c7d576fdb6bfc1937ff87dbc29609df0bd8",
+    "readme_url": "https://raw.githubusercontent.com/voxel51/fiftyone/4b915c7d576fdb6bfc1937ff87dbc29609df0bd8/README.md",
+    "readme_sha256": "376ab854bc14b1aa88072d775f61ab0deef15d2e613958ed55259657b24bf127",
+    "license_url": "https://raw.githubusercontent.com/voxel51/fiftyone/4b915c7d576fdb6bfc1937ff87dbc29609df0bd8/LICENSE",
+    "license_sha256": "4103450ae46b27f086a55e075be160f57b06a534ee3d09b570050e0ec4b84a89",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "Breakthrough/PySceneDetect",
+    "url": "https://raw.githubusercontent.com/Breakthrough/PySceneDetect/main/README.md",
+    "commit": "7cd1005e8349d8e913d0930fc1750363eb4ddc51",
+    "readme_url": "https://raw.githubusercontent.com/Breakthrough/PySceneDetect/7cd1005e8349d8e913d0930fc1750363eb4ddc51/README.md",
+    "readme_sha256": "f217e18afed01143bf4076e976ec7c0cdb7ede2704fc55ea6706659eda9fc45d",
+    "license_url": "https://raw.githubusercontent.com/Breakthrough/PySceneDetect/7cd1005e8349d8e913d0930fc1750363eb4ddc51/LICENSE",
+    "license_sha256": "e855ca89e457a7d0b6b7c92ad475d1120a9a5b5bf4e5048c706b1b3889fbc349",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "mltframework/shotcut",
+    "url": "https://raw.githubusercontent.com/mltframework/shotcut/master/README.md",
+    "commit": "5b4791be8c06c4ebb5b6ca45d798af3f3291fd5b",
+    "readme_url": "https://raw.githubusercontent.com/mltframework/shotcut/5b4791be8c06c4ebb5b6ca45d798af3f3291fd5b/README.md",
+    "readme_sha256": "2a38840fc2fafa928b9b8cfa4082581b1a1a699b920e5b9168a23c62bd6a9df8",
+    "license_url": "https://raw.githubusercontent.com/mltframework/shotcut/5b4791be8c06c4ebb5b6ca45d798af3f3291fd5b/COPYING",
+    "license_sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "mifi/lossless-cut",
+    "url": "https://raw.githubusercontent.com/mifi/lossless-cut/master/README.md",
+    "commit": "2610158c7861e0b96e2020cebcdd3c539ff33830",
+    "readme_url": "https://raw.githubusercontent.com/mifi/lossless-cut/2610158c7861e0b96e2020cebcdd3c539ff33830/README.md",
+    "readme_sha256": "aad0be61e3679dd9925f6b9725cba4ae49145192f531f14ef205bce9999e73b8",
+    "license_url": "https://raw.githubusercontent.com/mifi/lossless-cut/2610158c7861e0b96e2020cebcdd3c539ff33830/LICENSE",
+    "license_sha256": "ed4033ab1ae27bdff154db7f90a24a2ed166dc52bf0dcdc50f805e837448a802",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "m-bain/whisperX",
+    "url": "https://raw.githubusercontent.com/m-bain/whisperX/main/README.md",
+    "commit": "771b4a14a9486f8fd5aef18ef49e35d639523dd3",
+    "readme_url": "https://raw.githubusercontent.com/m-bain/whisperX/771b4a14a9486f8fd5aef18ef49e35d639523dd3/README.md",
+    "readme_sha256": "38a681ac8cc79589e11f227f9d053f6f66054cab4ae0069804ca6b52306e3aa8",
+    "license_url": "https://raw.githubusercontent.com/m-bain/whisperX/771b4a14a9486f8fd5aef18ef49e35d639523dd3/LICENSE",
+    "license_sha256": "cddc25bce26226b4a04ed12839d9006b7a4403da9020ef6428ef7282a6567441",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "pyannote/pyannote-audio",
+    "url": "https://raw.githubusercontent.com/pyannote/pyannote-audio/main/README.md",
+    "commit": "b749285c5cdd4636b2edc7f766f1352c8dde9369",
+    "readme_url": "https://raw.githubusercontent.com/pyannote/pyannote-audio/b749285c5cdd4636b2edc7f766f1352c8dde9369/README.md",
+    "readme_sha256": "fb790724a0d1768fd0f0654d0f687a778812b6c6a9642a1ff2956debaf492f89",
+    "license_url": "https://raw.githubusercontent.com/pyannote/pyannote-audio/b749285c5cdd4636b2edc7f766f1352c8dde9369/LICENSE",
+    "license_sha256": "a3b53644a76e70e289b25271b119c0a1aadaaf0db7a16225fb494fdc0e36c32a",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "facebookresearch/sam2",
+    "url": "https://raw.githubusercontent.com/facebookresearch/sam2/main/README.md",
+    "commit": "2b90b9f5ceec907a1c18123530e92e794ad901a4",
+    "readme_url": "https://raw.githubusercontent.com/facebookresearch/sam2/2b90b9f5ceec907a1c18123530e92e794ad901a4/README.md",
+    "readme_sha256": "eea69ee1042fb30933c5ca5019fbf0f6f9366cec5e792109281b5023a4f1589c",
+    "license_url": "https://raw.githubusercontent.com/facebookresearch/sam2/2b90b9f5ceec907a1c18123530e92e794ad901a4/LICENSE",
+    "license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "tauri-apps/tauri",
+    "url": "https://raw.githubusercontent.com/tauri-apps/tauri/master/README.md",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "mpv-player/mpv",
+    "url": "https://raw.githubusercontent.com/mpv-player/mpv/master/README.md",
+    "commit": "492bae0768f5e826991bf9fb222fa303371e8498",
+    "readme_url": "https://raw.githubusercontent.com/mpv-player/mpv/492bae0768f5e826991bf9fb222fa303371e8498/README.md",
+    "readme_sha256": "966edbfa16ddf85277733494f6458c3546e35e445f530f7d92310362e9006979",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "dennisonbertram/emulsion",
+    "commit": "f28083faf1945975f96dea44f846ab3724ecb652",
+    "readme_url": "https://raw.githubusercontent.com/dennisonbertram/emulsion/f28083faf1945975f96dea44f846ab3724ecb652/README.md",
+    "license_url": "https://raw.githubusercontent.com/dennisonbertram/emulsion/f28083faf1945975f96dea44f846ab3724ecb652/LICENSE",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "bkingfilm/lapian-notes",
+    "commit": "d2860b6621dd2826392fda86fb337440b158faef",
+    "readme_url": "https://raw.githubusercontent.com/bkingfilm/lapian-notes/d2860b6621dd2826392fda86fb337440b158faef/README.md",
+    "license_url": "https://raw.githubusercontent.com/bkingfilm/lapian-notes/d2860b6621dd2826392fda86fb337440b158faef/LICENSE",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "opendatalab/labelU",
+    "commit": "8681ca499df68da0b77122a8d55c4c679bf837de",
+    "readme_url": "https://raw.githubusercontent.com/opendatalab/labelU/8681ca499df68da0b77122a8d55c4c679bf837de/README.md",
+    "license_url": "https://raw.githubusercontent.com/opendatalab/labelU/8681ca499df68da0b77122a8d55c4c679bf837de/LICENSE",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "antingshen/BeaverDam",
+    "commit": "3e1055341c3164f201e39ea661316858c42ee00f",
+    "readme_url": "https://raw.githubusercontent.com/antingshen/BeaverDam/3e1055341c3164f201e39ea661316858c42ee00f/README.md",
+    "license_url": "https://raw.githubusercontent.com/antingshen/BeaverDam/3e1055341c3164f201e39ea661316858c42ee00f/LICENSE",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "hohonuuli/vars",
+    "commit": "a695f6f828d5594c93091e10e178ce23ab30d945",
+    "readme_url": "https://raw.githubusercontent.com/hohonuuli/vars/a695f6f828d5594c93091e10e178ce23ab30d945/README.md",
+    "license_url": "https://raw.githubusercontent.com/hohonuuli/vars/a695f6f828d5594c93091e10e178ce23ab30d945/LICENSE",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "Vincentwei1021/video-shotcraft",
+    "commit": "13c74a707786872a18e3317e48c5c94011027620",
+    "readme_url": "https://raw.githubusercontent.com/Vincentwei1021/video-shotcraft/13c74a707786872a18e3317e48c5c94011027620/README.md",
+    "license_url": "https://raw.githubusercontent.com/Vincentwei1021/video-shotcraft/13c74a707786872a18e3317e48c5c94011027620/LICENSE",
+    "reviewed_on": "2026-10-15",
+    "evidence": "official documentation; not runtime-tested"
+  },
+  {
+    "repo": "ggml-org/whisper.cpp",
+    "url": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/README.md",
+    "sha256": "43451813ec96b5ea286c6d676f467bdffb053224c110c257ce3d67d911e774e7",
+    "reviewed_on": "2026-10-15",
+    "evidence": "rolling official documentation URL; not runtime-tested"
+  },
+  {
+    "repo": "FFmpeg/FFmpeg",
+    "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/master/LICENSE.md",
+    "sha256": "e6dc72d5665a1ebd6dcc841de59278dad4ca77ecc47b03f1064a55c3e9ea8bb8",
+    "reviewed_on": "2026-10-15",
+    "evidence": "rolling official documentation URL; not runtime-tested"
+  },
+  {
+    "repo": "HumanSignal/label-studio",
+    "url": "https://raw.githubusercontent.com/HumanSignal/label-studio/develop/LICENSE",
+    "sha256": "ca656b15c1e22468c7798df4356660755fb1ccd12d7ee0bade82bd65e3038e1b",
+    "reviewed_on": "2026-10-15",
+    "evidence": "rolling official documentation URL; not runtime-tested"
+  },
+  {
+    "repo": "AcademySoftwareFoundation/OpenTimelineIO",
+    "url": "https://raw.githubusercontent.com/AcademySoftwareFoundation/OpenTimelineIO/main/README.md",
+    "sha256": "2cfd9176babfec573e382caeae12909aeb71dfae9095b7c926a2680cbc90da10",
+    "reviewed_on": "2026-10-15",
+    "evidence": "rolling official documentation URL; not runtime-tested"
+  }
+]
