@@ -5,19 +5,47 @@
 
 [English](README.md)
 
-把影视中的人物、衣着、姿态、场景、对白、声音事件和镜头关系，组织为可定位、可审核、可复用的素材。以 `.cbox` 加密描述与标注清单，配合对应素材集合，为创作参考和特定训练任务提供可追溯输入。
+**当前已有可运行的 Electron 开发预览版。** 从本地视频、图片和音频出发，建立角色、场景、道具、声音资产，记录时间段与矩形区域标注，组织素材集合并导出加密描述。
 
-**当前交付：研究、架构和格式实验；桌面软件尚未实现或发行。** 首先面向 macOS，架构为 Windows/Linux 保留适配空间。
+![CutBox 桌面界面](docs/design/desktop.png)
 
-## 阅读与运行
+## 启动
 
-从 [产品目标](specs/VISION.md)、[开源调研](docs/research/RESEARCH.md)、[交互设计](docs/INTERACTION.md) 开始；继续看 [数据模型](docs/DATA_MODEL.md)、[技术架构](docs/ARCHITECTURE.md)、[CBox 格式](docs/CBOX_FORMAT.md) 与 [路线图](docs/ROADMAP.md)。
+需要 Node.js 22.16+（推荐 Node 24 LTS）、npm，以及 PATH 中可调用的 `ffmpeg` / `ffprobe`。macOS 可执行 `brew install ffmpeg` 安装媒体工具。
 
-[英文入口的运行命令](README.md#run-the-format-experiment) 可生成自制合成音、加密清单，并验证素材。Python 3.12+，无 API Key；口令在终端隐式输入。实验只支持全素材与 WAV 样本区间标注，不进行视频裁切、自动标注或模型训练。
+```sh
+npm ci
+npm start
+```
 
-**`.cbox` 只加密描述，旁边的素材仍是明文。** 搬迁集合时同时携带素材目录；实验格式不能作为唯一备份，也不代表任意影视素材都可用于训练。模型建议与人工审核、观察与拉片解释均明确区分。
+技术栈为 Electron、React/TypeScript、SQLite 和隔离的后台 Worker；无需云账号或 API Key。普通导入只建立本地引用，请保留原始文件位置；素材包导入会复制已校验的媒体到应用管理目录。数据保存在 Electron 应用数据目录，可通过 `CUTBOX_DATA_DIR` 指定；`CUTBOX_FFMPEG` / `CUTBOX_FFPROBE` 可指定工具路径。
 
-贡献建议以一条实际用户任务为单位，附输入、失败条件与验证，不以新增标签数量代替可用性。
+## 首轮可用功能
+
+- 素材库：本地导入、缩略图、搜索、网格/列表与播放。
+- 资产页：角色、场景、道具、声音的新增编辑、标签、封面及素材关联。
+- 标注与拉片：时间区间、可选矩形区域、关联资产、审核状态及观察笔记。
+- 素材集合：选取成员、导出 `.cbox` 加密描述与对应媒体、校验后事务导入。
+- 参考视频：真实 MP4 片段和边缘参考导出、任务进度/取消及来源描述文件。
+
+**深度、姿态和分割模型尚未接入**，界面会显示不可用。边缘参考不等于深度图。自动跟踪、转写、音频波形、精确逐帧时间线和训练格式适配属于后续阶段。
+
+已在 Linux 环境运行真实 Electron 与 FFmpeg 验证。macOS 是产品优先目标，但 macOS/Windows 原生验收、签名和安装包尚未完成。部分源编码无法直接在 Chromium 播放，尚未实现自动代理转码；当前秒级区间选择不保证 VFR 素材逐帧精确。
+
+**`.cbox` 只加密描述，旁边的素材仍为明文。** 搬迁时携带整个导出目录。桌面格式 `cutbox.desktop/0.1` 与早期 Python 实验 `cutbox.prototype/0.1` 不可互换；格式仍在演进，请保留原始素材备份。
+
+## 设计与验证
+
+[产品目标](specs/VISION.md) · [开源调研](docs/research/RESEARCH.md) · [交互设计](docs/INTERACTION.md) · [数据模型](docs/DATA_MODEL.md) · [架构](docs/ARCHITECTURE.md) · [CBox 格式](docs/CBOX_FORMAT.md) · [路线图](docs/ROADMAP.md) · [验证记录](docs/VALIDATION.md)
+
+[参考视频设计](docs/REFERENCE_EXPORT.md)与[角色／场景资产工作区](docs/ASSET_WORKSPACE.md)包含后续完整目标，具体可用范围以上述清单为准。
+
+```sh
+npm run check
+npm run test:desktop  # 需要图形显示环境，Linux CI 可使用 Xvfb
+```
+
+`npm run dev` 仅预览渲染页面；本地文件功能需 Electron。修改界面后运行 `npm run build`，再用 `npm run desktop` 启动。早期 Python 格式实验及其测试入口见英文 README。
 <!-- bip:project:end -->
 
 ## 造物矩阵

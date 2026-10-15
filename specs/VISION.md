@@ -23,29 +23,41 @@ CutBox 是一个本地优先的影视素材标注、拉片与素材集合制作�
 
 覆盖至少：可变帧率、多人重叠讲话、画外音、遮挡后重现、人物换衣、竖屏旋转、不同音轨与采样率。不能因用户没有下载模型而无法手工完成闭环。
 
-## 本轮交付与状态
+## 当前交付与状态
 
-本轮是研究与架构设计、模板初始化及 `.cbox` 格式实验。仓库包含研究证据、交互、数据模型、技术决策、路线图与可执行的加密封装原型；没有声称桌面软件已经实现。原型只处理 JSON 描述与已有素材文件的完整性验证，不做视频切片、自动标注或训练。
+已从研究与 `.cbox` 格式实验进入 Electron 第一条实现切片。提供素材库、角色/场景/道具/声音资产列表和编辑、秒级标注、数值矩形区域、基础拉片笔记、素材集合、包导入导出及会话任务界面。SQLite 保存元数据，普通媒体导入保留原片引用；包导入把素材复制到应用托管目录。
 
-后续桌面方案：Tauri 2 + TypeScript/React，Rust 领域服务 + SQLite，FFmpeg/ffprobe 媒体工作进程，可选独立推理适配器。最终播放器选型必须通过 macOS 精确定位试验，详见 [架构](../docs/ARCHITECTURE.md)。
+FFmpeg 实现原片片段和边缘参考视频导出。深度、姿态、分割、转录模型尚未接入，明确显示不可用，不把边缘视频冒充深度。现有播放使用 Chromium 原生播放器，没有源 PTS 精确帧通道，不承诺 VFR 逐帧准确。
+
+技术栈已实现为 Electron + TypeScript/React，Node Worker 领域服务 + SQLite，FFmpeg/ffprobe 子进程及独立 Node 包协议模块。宏观目标保留在 [架构](../docs/ARCHITECTURE.md) 和 [路线图](../docs/ROADMAP.md)，不能把这些目标当作已完成能力。
+
+当前验证在 Linux 云工作区；macOS 仍是第一发行目标，但安装包、签名、公证和真机 GPU/播放器尚未验证。完整修订、自动标注、训练导出、镜头图与高级拉片仍待开发。SHA 去重保留旧媒体路径，旧源丢失后重新导入同内容还不能自动重新关联。
 
 ## 当前本地运行
 
-Python 3.12+；安装原型依赖后：
+需要 Node.js 24+、npm 和提供 libx264 的 FFmpeg/ffprobe；安装依赖后运行：
 
 ```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python scripts/cbox.py demo /tmp/cutbox-demo
-.venv/bin/python scripts/cbox.py pack /tmp/cutbox-demo/manifest.json /tmp/cutbox-demo/media /tmp/cutbox-demo/collection.cbox
-.venv/bin/python scripts/cbox.py verify /tmp/cutbox-demo/collection.cbox /tmp/cutbox-demo/media
+npm ci
+npm start
 ```
 
-pack / verify 在终端隐式输入口令，不把口令放命令行参数或版本库。demo 为合成正弦音，不是人声或影视样本。不要用这个实验格式存放唯一一份数据。
+`npm start` 构建后启动 Electron；单独 `npm run dev` 只启动网页，不具备桌面文件与数据库接口。`CUTBOX_DATA_DIR` 可指定独立测试库，`CUTBOX_FFMPEG`/`CUTBOX_FFPROBE` 可指定工具路径。
+
+```sh
+npm run build
+npm test
+python3 scripts/check_template.py --project
+```
+
+保留的 Python 3.12+ 格式实验可用 `.venv/bin/python -m unittest discover -s tests -v` 验证，其 schema 与桌面包不同。两种包都只加密 JSON 描述，素材文件保持明文；移动包必须携带 `media` 目录。当前格式仍属实验，不要作为唯一一份数据。
 
 ## 非目标与维护
 
 首版不替代 NLE，不做音视频生成或模型训练，不上传源片，不承诺全自动理解所有人物和镜头含义。暂不做多人同步、云资产库、移动端和插件市场。
 
 无需服务部署。macOS 签名、公证、安装包、GPU 推理和跨平台验收属于后续实现；没有下载地址或发行承诺。
+
+## 已确认的功能扩展
+
+本地参考视频生成：深度、边缘、姿态、分割蒙版等，支持预览、参数调整、独立导出与集合打包，详见[参考导出](../docs/REFERENCE_EXPORT.md)。角色、场景、道具、声音支持独立列表/详情、交互新增编辑、导入导出与来源展示，详见[资产工作区](../docs/ASSET_WORKSPACE.md)。资产页面和基础导入导出、原片/边缘参考已实现；深度/姿态/蒙版及对应模型仍是后续范围。

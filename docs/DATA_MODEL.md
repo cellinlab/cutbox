@@ -1,6 +1,29 @@
 # 领域模型与标注本体
 
-模型是提案；本轮 `.cbox` 原型只实现文末所列子集。数据库、API 与交换格式共享同一身份和坐标约定，不能把数据库行号作为公开对象 ID。
+文档同时记录当前模型与长期目标；未明确列入「当前实现」的本体、关系和锚点仍是设计。数据库行号不作为公开对象 ID。
+
+## 当前实现：schema v1
+
+`desktop/domain.mjs` 使用 SQLite 的 `media`、`entities`、`annotations`、`collections` 四张表，每行是 `id + JSON`，`PRAGMA user_version=1`。所有写入经过后端校验与事务，当前没有关系表外键、历史表或全文索引。
+
+| 对象 | 已持久化字段 |
+| --- | --- |
+| Media | UUID、名称、video/audio/image 类型、绝对路径、SHA-256、大小、秒级时长、可选宽高/缩略图、创建时间 |
+| Entity | UUID、character/scene/prop/sound 类型、名称、描述、字符串标签、mediaIds、可选 coverMediaId、创建/更新时间 |
+| Annotation | UUID、mediaId、可选 entityId、浮点秒 start/end、label、notes、reviewState、可选归一化矩形 region、创建/更新时间 |
+| Collection | UUID、名称、描述、mediaIds/entityIds/annotationIds、创建/更新时间 |
+
+`region` 为 `{x,y,width,height}`，原点左上角，范围在 0–1 内且面积非零；音频不允许画面区域。当前标注满足 `0 ≤ start ≤ end ≤ duration`；图片时长为 0。相等边界可以存储为点标记，但参考视频导出要求正时长。没有源 PTS、音频样本锚点、多音轨选择或区域轨迹，因此不保证 VFR 逐帧准确。
+
+审核状态只有 `suggested/accepted/needs_review`；尚无 rejected、审核历史或模型来源。拉片视图使用同一 Annotation，以 label 记录观察、notes 记录解释，不等于独立的 Interpretation/Relation 模型。
+
+省略 ID 创建，已有 ID 更新；未知更新 ID 拒绝。所有引用必须存在，封面必须属于实体的 mediaIds。删除实体只移除标注 entityId 和集合中的实体引用，保留标注、素材及原文件；删除标注同步移除集合引用。编辑覆盖当前值，尚无撤销历史。
+
+`importSnapshot` 一次事务导入完整依赖图，内部引用重映射，语义对象一律创建新 UUID，不覆盖既有实体；媒体按 SHA-256 去重。任一无效字段或缺失引用使数据库整体回滚。去重沿用旧路径，旧源丢失时重新导入同一内容不能自动修复；需要未来重新关联工作流。
+
+桌面包 schema 为 `cutbox.desktop/0.1`，只导出白名单字段和相对素材路径；导入先验证包与文件再写库。早期 Python 实验 schema 不等同于桌面 schema，不承诺跨版本互通。
+
+## 以下为长期领域模型
 
 ## 从证据到解释
 
@@ -61,6 +84,10 @@ CBox 是统一证据交换层，不是所有模型的训练输入。任务适配
 
 播客使用有三种不同产物：可直接剪辑的授权音频；供生成的风格/内容参考描述；带明确同意和目标许可的声音训练素材。分离人声产生的是派生估计，可能有音乐残留、混响与失真，不应标为原始干净人声。
 
-## 本轮格式实验覆盖
+## 保留的 Python 格式实验
 
-实现仅包括：素材相对路径/大小/SHA-256，描述列表，音频样本锚点，schema版本检查，加密JSON与素材完整性回读。完整实体图、时序区域、数据库和训练导出适配器尚未实现，不能从实验推断完整本体已落地。
+早期 Python CLI 仍覆盖素材相对路径/大小/SHA-256、描述列表、音频样本锚点、schema 检查、加密 JSON 与完整性回读。桌面采用上文四类对象的独立 schema；两个实验不应混用。时序区域、完整关系图和训练适配器仍未实现。
+
+## 资产卡与派生参考扩展
+
+角色/场景/道具/声音资产卡以Entity身份聚合来源、状态版本和展示信息，Asset仍指影音文件。实体包需要entities、relations、成员与依赖闭包及冲突导入策略，见[资产工作区](ASSET_WORKSPACE.md)。参考输出由Derivation连接源anchor与输出Asset，记录时间/坐标映射、模型和深度/pose/palette等编码语义，见[参考导出](REFERENCE_EXPORT.md)。当前桌面 schema 仅实现资产卡与来源、标注引用；relations、完整 Derivation 与模型编码元数据仍需版本化升级。

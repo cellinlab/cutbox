@@ -5,41 +5,56 @@ Local-first film annotation, close viewing, and reusable media collections.
 
 [简体中文](README.zh-CN.md)
 
-CutBox is being designed to turn video, images and audio into traceable, fine-grained assets: people, clothing, poses, scenes, dialogue, sound events and cinematic relationships. Collections will retain source anchors and review history for creative reference and task-specific dataset export.
+**Working Electron development preview.** Import local video, audio and images; organize character, scene, prop and sound assets; annotate time ranges and rectangular regions; curate collections; export clips, edge-reference videos and encrypted `.cbox` manifests with their media.
 
-**Current status: architecture and format prototype. There is no desktop application or release yet.** macOS is the first target; Windows and Linux compatibility is a design goal.
+![CutBox desktop](docs/design/desktop.png)
 
-## Explore the design
+## Run the desktop app
 
-- [Product scope](specs/VISION.md)
-- [Research and independent decisions](docs/research/RESEARCH.md)
-- [Architecture](docs/ARCHITECTURE.md), [data model](docs/DATA_MODEL.md), [interaction](docs/INTERACTION.md)
-- [CBox format experiment](docs/CBOX_FORMAT.md), [implementation roadmap](docs/ROADMAP.md)
+Requires Node.js 22.16+ (Node 24 LTS recommended), npm, and `ffmpeg` / `ffprobe` on PATH. On macOS, install the latter with `brew install ffmpeg`.
 
-## Run the format experiment
+```sh
+npm ci
+npm start
+```
 
-Requires Python 3.12+. This CLI encrypts a JSON manifest and verifies the associated files. It does not annotate, cut or copy media.
+The app uses Electron + React/TypeScript, SQLite and an isolated backend worker. No cloud account or API key is needed. Normal media import stores local file references; keep source files in place. Bundle import copies verified media into app-managed storage. Data lives in Electron's application user-data directory; `CUTBOX_DATA_DIR` optionally selects another directory. `CUTBOX_FFMPEG` and `CUTBOX_FFPROBE` can select executable paths.
+
+This preview has been exercised on Linux with real Electron and FFmpeg. macOS is the primary product target, but native macOS/Windows testing, signing and installers remain pending. Some imported codecs cannot play in Chromium; automatic playback proxies are not implemented. Video selection uses seconds and is not frame-exact for variable-frame-rate sources.
+
+## Implemented and planned
+
+- Library with thumbnails, search, grid/list and playback.
+- Character / scene / prop / sound cards with editing, tags, covers and linked media.
+- Time-range annotations, optional rectangular region, entity links, review state and study notes.
+- Collections, encrypted metadata export, checked media copies and transactional import.
+- Actual MP4 clip and edge-reference export, progress/cancellation and provenance sidecars.
+
+Depth, pose and segmentation models are **not installed or implemented**; the UI reports them unavailable. Automatic tracking, transcription, waveform editing, frame-accurate timelines and training-format adapters remain planned. Edge detection is not depth estimation.
+
+**`.cbox` encrypts metadata only; external media remains plaintext.** Transfer the entire exported folder. The desktop schema is `cutbox.desktop/0.1`; the earlier Python `cutbox.prototype/0.1` experiment is distinct and is not interchangeable. Formats remain experimental; keep source backups.
+
+## Design and validation
+
+[Product scope](specs/VISION.md) · [Research](docs/research/RESEARCH.md) · [Architecture](docs/ARCHITECTURE.md) · [Data model](docs/DATA_MODEL.md) · [Interaction](docs/INTERACTION.md) · [Reference export](docs/REFERENCE_EXPORT.md) · [Asset workspace](docs/ASSET_WORKSPACE.md) · [CBox format](docs/CBOX_FORMAT.md) · [Roadmap](docs/ROADMAP.md) · [Validation](docs/VALIDATION.md)
+
+```sh
+npm run check
+npm run test:desktop  # requires a graphical display; Linux CI can use Xvfb
+```
+
+`npm run dev` serves a renderer design preview only; native operations require Electron. After renderer edits, rebuild with `npm run build` and launch with `npm run desktop`.
+
+The earlier format CLI remains available for research:
 
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python scripts/cbox.py demo /tmp/cutbox-demo
-.venv/bin/python scripts/cbox.py pack /tmp/cutbox-demo/manifest.json /tmp/cutbox-demo/media /tmp/cutbox-demo/collection.cbox
-.venv/bin/python scripts/cbox.py verify /tmp/cutbox-demo/collection.cbox /tmp/cutbox-demo/media
-```
-
-Use a new demo directory. Enter a passphrase interactively; never put real passphrases in command arguments. **The `.cbox` encrypts metadata only; the external media stays unencrypted.** Preserve the media directory when moving a collection. The example is a generated sine wave, not film footage or speech.
-
-## Validate and contribute
-
-```sh
 .venv/bin/python -m unittest discover -s tests -v
-python3 scripts/check_template.py --project
+.venv/bin/python scripts/cbox.py demo /tmp/cutbox-demo
 ```
 
-Read the design and propose a small change with its source anchors, failure cases and verification. The planned desktop stack is Tauri, TypeScript/React, Rust, SQLite and isolated media/model workers; it is not implemented yet. No cloud account, API key or service is needed for the prototype. There is no deployment or download to claim.
-
-CBox is experimental and not a universal training format. Source rights, review quality, target-task schemas and train/test splits remain explicit concerns. The desktop player, GPU models, signing and cross-platform behavior have not been validated.
+Contribute a complete user task with source anchors, failure cases and verification. CBox is not a universal training format; task-specific schemas and provenance remain explicit design work.
 <!-- bip:project:end -->
 
 ## 造物矩阵
