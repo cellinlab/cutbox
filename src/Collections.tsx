@@ -1,18 +1,27 @@
 import { useState } from "react";
 import { Plus, Download, Pencil, Folder } from "lucide-react";
+import { Playlist } from "./Playlist";
 import { Empty, Modal, MediaChecks } from "./ui";
-import type { CollectionInput, Snapshot } from "./types";
+import type { CollectionInput, Snapshot, ReferenceMode } from "./types";
 export function Collections({
   data,
   mutate,
   onExport,
+  run,
+  open,
 }: {
   data: Snapshot;
   mutate: (fn: () => Promise<Snapshot>) => Promise<boolean>;
   onExport: (id: string) => void;
+  run: (fn: () => Promise<unknown>) => Promise<void>;
+  open: (id: string, start?: number) => void;
 }) {
   const [editing, setEditing] = useState<CollectionInput | null>(null);
   const [busy, setBusy] = useState(false);
+  const [playing, setPlaying] = useState<string>();
+  const [referenceMode, setReferenceMode] = useState<ReferenceMode>("clip");
+  const [format, setFormat] = useState<"jsonl" | "coco" | "srt">("jsonl");
+  const [profile, setProfile] = useState<"full" | "trimmed">("full");
   return (
     <>
       <div className="toolbar">
@@ -51,6 +60,11 @@ export function Collections({
                   {c.annotationIds.length} 条标注
                 </small>
               </div>
+              <button
+                onClick={() => setPlaying(playing === c.id ? undefined : c.id)}
+              >
+                播放列表
+              </button>
               <button onClick={() => setEditing({ ...c })}>
                 <Pencil />
                 编辑
@@ -59,6 +73,80 @@ export function Collections({
                 <Download />
                 导出集合
               </button>
+              <div className="portable-export">
+                <select
+                  aria-label="交换格式"
+                  value={format}
+                  onChange={(e) => setFormat(e.target.value as typeof format)}
+                >
+                  <option value="jsonl">JSONL</option>
+                  <option value="coco">COCO</option>
+                  <option value="srt">SRT 字幕</option>
+                </select>
+                <select
+                  aria-label="导出范围"
+                  value={profile}
+                  onChange={(e) => setProfile(e.target.value as typeof profile)}
+                >
+                  <option value="full">完整素材</option>
+                  <option value="trimmed">选段裁切</option>
+                </select>
+                <button
+                  onClick={() =>
+                    void run(() =>
+                      window.cutbox!.exportDataset({
+                        format,
+                        collectionId: c.id,
+                        profile,
+                      }),
+                    )
+                  }
+                >
+                  导出交换格式
+                </button>
+              </div>
+              <div className="portable-export">
+                <select
+                  aria-label="批量参考类型"
+                  value={referenceMode}
+                  onChange={(e) =>
+                    setReferenceMode(e.target.value as ReferenceMode)
+                  }
+                >
+                  {Object.entries({
+                    clip: "原片参考",
+                    edges: "边缘参考",
+                    crop: "区域裁切",
+                    frame: "关键帧",
+                    audio: "音频",
+                    depth: "深度",
+                    pose: "姿态",
+                    mask: "蒙版",
+                  }).map(([id, label]) => (
+                    <option key={id} value={id}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  disabled={!c.annotationIds.length}
+                  onClick={() =>
+                    void run(() =>
+                      window.cutbox!.exportReferences({
+                        annotationIds: c.annotationIds,
+                        mode: referenceMode,
+                      }),
+                    )
+                  }
+                >
+                  批量导出标注参考
+                </button>
+              </div>
+              {playing === c.id && (
+                <div className="full">
+                  <Playlist collection={c} data={data} open={open} />
+                </div>
+              )}
             </article>
           ))}
         </div>

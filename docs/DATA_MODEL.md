@@ -2,26 +2,32 @@
 
 文档同时记录当前模型与长期目标；未明确列入「当前实现」的本体、关系和锚点仍是设计。数据库行号不作为公开对象 ID。
 
-## 当前实现：schema v1
+## 当前实现：schema v2
 
-`desktop/domain.mjs` 使用 SQLite 的 `media`、`entities`、`annotations`、`collections` 四张表，每行是 `id + JSON`，`PRAGMA user_version=1`。所有写入经过后端校验与事务，当前没有关系表外键、历史表或全文索引。
+`desktop/domain.mjs` 使用 SQLite `media`、`entities`、`annotations`、`collections`、`templates`、`events`、`relations`、`stories` 八张对象表，每行是 `id + JSON`，`PRAGMA user_version=2`。另有 `revisions` 保存操作前后快照，`domain_meta` 保存撤销游标。v1 数据迁移保留原 ID 和关联。引用完整性由 `validateSnapshot` 和事务保证；当前没有关系型外键、FTS5 或向量索引。
 
 | 对象 | 已持久化字段 |
 | --- | --- |
-| Media | UUID、名称、video/audio/image 类型、绝对路径、SHA-256、大小、秒级时长、可选宽高/缩略图、创建时间 |
-| Entity | UUID、character/scene/prop/sound 类型、名称、描述、字符串标签、mediaIds、可选 coverMediaId、创建/更新时间 |
-| Annotation | UUID、mediaId、可选 entityId、浮点秒 start/end、label、notes、reviewState、可选归一化矩形 region、创建/更新时间 |
-| Collection | UUID、名称、描述、mediaIds/entityIds/annotationIds、创建/更新时间 |
+| Media | UUID、名称、video/audio/image、绝对路径、SHA-256、大小、秒级时长、可选宽高/缩略图/代理、series/episode、创建时间、可选 sourceAnchor |
+| Entity | character/actor/scene/prop/sound、名称、描述、标签、mediaIds、封面、标量 attributes、可选 actorEntityId、时间戳 |
+| Annotation | mediaId、可选 entityId、start/end、label/notes、reviewState、category、epistemic、confidence、tags、templateId/values、trackId、region/polygon/keyframes、words/keypoints、sourceAnchor、时间戳 |
+| Collection | 名称、描述、mediaIds/entityIds/annotationIds、时间戳 |
+| Template | 名称、描述、fields；字段 key/label/type/required/options/unit，类型为 text/number/boolean/select |
+| Event | 名称、描述、entityIds、annotationIds、sceneId、storyTime、epistemic/confidence、changes（entityId/key/before/after） |
+| Relation | fromEntityId、toEntityId、type、description、evidenceAnnotationIds、epistemic/confidence |
+| Story | 名称、描述、类型化 variables、startNodeId、nodes；节点引用媒体区间/事件，choices 包含条件与原子效果 |
 
-`region` 为 `{x,y,width,height}`，原点左上角，范围在 0–1 内且面积非零；音频不允许画面区域。当前标注满足 `0 ≤ start ≤ end ≤ duration`；图片时长为 0。相等边界可以存储为点标记，但参考视频导出要求正时长。没有源 PTS、音频样本锚点、多音轨选择或区域轨迹，因此不保证 VFR 逐帧准确。
+`region` 为归一化 `{x,y,width,height}`，原点左上，范围与面积校验。`polygon` 至少三个点且非零面积；`keyframes` 时间递增、唯一并位于标注范围，保存矩形。音频不接受画面几何。当前满足 `0 ≤ start ≤ end ≤ duration`；图片时长为 0，相等边界可用于点标记，视频输出要求正时长。仍没有源 PTS、样本级音频锚点或多音轨引用，不保证 VFR 逐帧准确。
 
-审核状态只有 `suggested/accepted/needs_review`；尚无 rejected、审核历史或模型来源。拉片视图使用同一 Annotation，以 label 记录观察、notes 记录解释，不等于独立的 Interpretation/Relation 模型。
+审核状态为 `suggested/accepted/needs_review`；认识状态独立为 `observed/interpreted/invented`，置信度为 0–1。两者不等同：接受一条分析不使它成为客观事实。模板值必须满足字段类型、必填和枚举约束；修改模板不能静默使已有标注失效。关系目前连接实体，事件因果顺序可用故事图表达，尚非任意对象关系本体。
 
-省略 ID 创建，已有 ID 更新；未知更新 ID 拒绝。所有引用必须存在，封面必须属于实体的 mediaIds。删除实体只移除标注 entityId 和集合中的实体引用，保留标注、素材及原文件；删除标注同步移除集合引用。编辑覆盖当前值，尚无撤销历史。
+省略 ID 创建，已有 ID 更新，未知更新 ID 拒绝。引用必须存在，封面属于实体 mediaIds，角色的 actorEntityId 只能引用 actor。删除操作按依赖校验或显式清理引用，不留下悬空关系；有事件、关系等依赖时可能拒绝删除。所有写入和批量标注是事务，undo/redo 支持跨重启恢复。默认最多保存 30 次操作，可配置 1–200；分支编辑丢弃 redo，不能把有限修订记录视为永久审计。
 
-`importSnapshot` 一次事务导入完整依赖图，内部引用重映射，语义对象一律创建新 UUID，不覆盖既有实体；媒体按 SHA-256 去重。任一无效字段或缺失引用使数据库整体回滚。去重沿用旧路径，旧源丢失时重新导入同一内容不能自动修复；需要未来重新关联工作流。
+`importSnapshot` 先校验完整图再事务导入，八类对象 ID 按映射重建；模板值、演员、事件证据、故事媒体/事件引用全部重映射。媒体按 SHA-256 去重，已失效的旧路径可由相同内容的新文件修复；重新关联必须通过完整摘要与大小校验。任一无效字段或缺失引用让数据库整体回滚。`replaceSnapshot` 用于校验后整体恢复并保留快照 ID，与合并导入不同。
 
-桌面包 schema 为 `cutbox.desktop/0.1`，只导出白名单字段和相对素材路径；导入先验证包与文件再写库。早期 Python 实验 schema 不等同于桌面 schema，不承诺跨版本互通。
+桌面包使用 `cutbox.desktop/0.2`，兼容读取 0.1 的四类对象，新增数组默认为空。导出仅含白名单字段、相对素材路径，导入先验证密文、大小、哈希与依赖，再由领域服务完整校验入库。文件复制与数据库事务不是同一原子事务，调用方负责失败副本清理。
+
+裁剪配置保留媒体和标注的 `sourceAnchor`，这里的 mediaId 是外部直接来源标识，不参与包内 ID 重映射。它保存上一步输入的区间和摘要，不是无限追溯的派生链；二次裁剪不会自动保留全部更早变换。源标注与故事时间重基准，奇数尺寸补边时几何重新归一化，详见[CBox 格式](CBOX_FORMAT.md)。
 
 ## 以下为长期领域模型
 
@@ -86,8 +92,8 @@ CBox 是统一证据交换层，不是所有模型的训练输入。任务适配
 
 ## 保留的 Python 格式实验
 
-早期 Python CLI 仍覆盖素材相对路径/大小/SHA-256、描述列表、音频样本锚点、schema 检查、加密 JSON 与完整性回读。桌面采用上文四类对象的独立 schema；两个实验不应混用。时序区域、完整关系图和训练适配器仍未实现。
+早期 Python CLI 仍覆盖素材相对路径/大小/SHA-256、描述列表、音频样本锚点、schema 检查、加密 JSON 与完整性回读。桌面采用上文八类对象的独立 schema；两个实验不应混用。桌面已有关键帧、实体关系、事件/故事和 JSONL/COCO/SRT 适配；完整流级锚点、任意本体关系及任务划分协议仍待实现。
 
 ## 资产卡与派生参考扩展
 
-角色/场景/道具/声音资产卡以Entity身份聚合来源、状态版本和展示信息，Asset仍指影音文件。实体包需要entities、relations、成员与依赖闭包及冲突导入策略，见[资产工作区](ASSET_WORKSPACE.md)。参考输出由Derivation连接源anchor与输出Asset，记录时间/坐标映射、模型和深度/pose/palette等编码语义，见[参考导出](REFERENCE_EXPORT.md)。当前桌面 schema 仅实现资产卡与来源、标注引用；relations、完整 Derivation 与模型编码元数据仍需版本化升级。
+角色/场景/道具/声音资产卡以Entity身份聚合来源、状态版本和展示信息，Asset仍指影音文件。实体包需要entities、relations、成员与依赖闭包及冲突导入策略，见[资产工作区](ASSET_WORKSPACE.md)。参考输出由Derivation连接源anchor与输出Asset，记录时间/坐标映射、模型和深度/pose/palette等编码语义，见[参考导出](REFERENCE_EXPORT.md)。当前桌面 schema 已实现资产卡、实体关系、事件和故事引用；完整 Derivation 链、模型编码语义和逐帧变换映射仍需版本化升级。

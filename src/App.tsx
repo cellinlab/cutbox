@@ -15,11 +15,20 @@ import {
   FolderOpen,
   X,
   Download,
+  Settings,
+  Tags,
+  GitBranch,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import type { Snapshot, Job, Capabilities } from "./types";
 import { Empty, Thumb, Modal, time, ErrorContext } from "./ui";
 import { Assets } from "./Assets";
 import { Editor } from "./Editor";
+import { Templates } from "./Templates";
+import { ToolsWorkspace } from "./ToolsWorkspace";
+import { StoryWorkspace } from "./StoryWorkspace";
+import { Search as SearchFilters, emptyFilters, matchesMedia } from "./Search";
 import { Collections } from "./Collections";
 const nav = [
   ["library", "素材库", Folder],
@@ -27,6 +36,9 @@ const nav = [
   ["annotate", "标注工作台", SquarePen],
   ["study", "拉片", Clapperboard],
   ["collections", "素材集合", Folder],
+  ["templates", "标注模板", Tags],
+  ["story", "故事与关系", GitBranch],
+  ["tools", "分析与维护", Settings],
   ["jobs", "任务中心", ListChecks],
 ] as const;
 const descriptions = {
@@ -36,6 +48,9 @@ const descriptions = {
   study: "从镜头观察，到声画表达。",
   collections: "整理参考，带入下一次创作。",
   jobs: "查看本地处理与导出进度。",
+  templates: "定义字段与规则，重复使用你的标注方式。",
+  story: "关联证据、事件与人物，构建可游玩的分支。",
+  tools: "本地分析、模型配置、可靠备份与修订历史。",
 };
 export default function App() {
   const [page, setPage] = useState<(typeof nav)[number][0]>("library");
@@ -44,6 +59,10 @@ export default function App() {
     entities: [],
     annotations: [],
     collections: [],
+    templates: [],
+    events: [],
+    relations: [],
+    stories: [],
   });
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
@@ -53,6 +72,13 @@ export default function App() {
   const [filter, setFilter] = useState("all");
   const [view, setView] = useState("grid");
   const [mediaId, setMediaId] = useState<string>();
+  const [initialTime, setInitialTime] = useState(0);
+  const [filters, setFilters] = useState(emptyFilters);
+  const [history, setHistory] = useState<{
+    canUndo: boolean;
+    canRedo: boolean;
+  }>();
+  const [profile, setProfile] = useState<"full" | "trimmed">("full");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [capabilities, setCapabilities] = useState<Capabilities>();
   const [pack, setPack] = useState<{
@@ -82,6 +108,20 @@ export default function App() {
       unsubscribe();
     };
   }, []);
+  useEffect(() => {
+    if (ready)
+      void window
+        .cutbox!.history()
+        .then(setHistory)
+        .catch((e) => setError(String(e)));
+  }, [data, ready]);
+  useEffect(() => {
+    if (window.cutbox)
+      void window.cutbox
+        .jobs()
+        .then(setJobs)
+        .catch((e) => setError(String(e)));
+  }, []);
   async function mutate(fn: () => Promise<Snapshot>) {
     setError("");
     try {
@@ -110,7 +150,8 @@ export default function App() {
       setBusy(false);
     }
   }
-  function open(id: string) {
+  function open(id: string, start = 0) {
+    setInitialTime(start);
     setMediaId(id);
     setPage("annotate");
   }
@@ -123,7 +164,8 @@ export default function App() {
   const media = data.media.filter(
     (m) =>
       (filter === "all" || m.kind === filter) &&
-      m.name.toLowerCase().includes(query.toLowerCase()),
+      m.name.toLowerCase().includes(query.toLowerCase()) &&
+      matchesMedia(m, data, filters),
   );
   const title = nav.find((x) => x[0] === page)![1];
   return (
@@ -161,6 +203,22 @@ export default function App() {
               <p>{descriptions[page]}</p>
             </div>
             <div className="actions">
+              <button
+                className="icon"
+                aria-label="撤销"
+                disabled={!history?.canUndo}
+                onClick={() => void mutate(() => window.cutbox!.undo())}
+              >
+                <Undo2 />
+              </button>
+              <button
+                className="icon"
+                aria-label="重做"
+                disabled={!history?.canRedo}
+                onClick={() => void mutate(() => window.cutbox!.redo())}
+              >
+                <Redo2 />
+              </button>
               <button
                 className="primary"
                 disabled={!ready || busy}
@@ -263,6 +321,12 @@ export default function App() {
                       </button>
                     </div>
                   </div>
+                  <SearchFilters
+                    data={data}
+                    value={filters}
+                    onChange={setFilters}
+                    open={open}
+                  />
                   {data.media.length === 0 ? (
                     <div className="onboarding">
                       <div className="import-zone">
@@ -342,8 +406,8 @@ export default function App() {
                   data={data}
                   mutate={mutate}
                   onOpen={open}
-                  onExport={(id) =>
-                    packageDialog({ mode: "export", entityIds: [id] })
+                  onExport={(ids) =>
+                    packageDialog({ mode: "export", entityIds: ids })
                   }
                 />
               )}{" "}
@@ -356,17 +420,39 @@ export default function App() {
                   run={run}
                   capabilities={capabilities}
                   study={page === "study"}
+                  initialTime={initialTime}
                 />
               )}{" "}
               {page === "collections" && (
                 <Collections
                   data={data}
                   mutate={mutate}
+                  run={run}
+                  open={open}
                   onExport={(id) =>
                     packageDialog({ mode: "export", collectionId: id })
                   }
                 />
               )}{" "}
+              {page === "templates" && (
+                <Templates data={data} mutate={mutate} />
+              )}
+              {page === "tools" && (
+                <ToolsWorkspace
+                  data={data}
+                  mutate={mutate}
+                  run={run}
+                  open={open}
+                />
+              )}
+              {page === "story" && (
+                <StoryWorkspace
+                  data={data}
+                  mutate={mutate}
+                  run={run}
+                  open={open}
+                />
+              )}
               {page === "jobs" &&
                 (jobs.length === 0 ? (
                   <Empty
@@ -443,6 +529,7 @@ export default function App() {
                     try {
                       const result = await window.cutbox!.exportPackage({
                         password,
+                        profile,
                         entityIds: pack.entityIds,
                         collectionId: pack.collectionId,
                       });
@@ -465,6 +552,20 @@ export default function App() {
                 本模式仅加密 JSON
                 描述，素材文件保持明文。移动素材包时，请同时保留素材目录。
               </p>
+              {pack.mode === "export" && (
+                <label>
+                  素材范围
+                  <select
+                    value={profile}
+                    onChange={(e) =>
+                      setProfile(e.target.value as "full" | "trimmed")
+                    }
+                  >
+                    <option value="full">完整源素材</option>
+                    <option value="trimmed">按标注区间裁切</option>
+                  </select>
+                </label>
+              )}
               <label>
                 素材包口令
                 <input

@@ -5,7 +5,7 @@ Local-first film annotation, close viewing, and reusable media collections.
 
 [简体中文](README.zh-CN.md)
 
-**Working Electron development preview.** Import local video, audio and images; organize character, scene, prop and sound assets; annotate time ranges and rectangular regions; curate collections; export clips, edge-reference videos and encrypted `.cbox` manifests with their media.
+**Electron 0.2 development preview.** Import local video, audio and images; organize character, scene, prop and sound assets; annotate time ranges and rectangular regions; curate collections; export clips, edge-reference videos and encrypted `.cbox` manifests with their media.
 
 ![CutBox desktop](docs/design/desktop.png)
 
@@ -20,19 +20,25 @@ npm start
 
 The app uses Electron + React/TypeScript, SQLite and an isolated backend worker. No cloud account or API key is needed. Normal media import stores local file references; keep source files in place. Bundle import copies verified media into app-managed storage. Data lives in Electron's application user-data directory; `CUTBOX_DATA_DIR` optionally selects another directory. `CUTBOX_FFMPEG` and `CUTBOX_FFPROBE` can select executable paths.
 
-This preview has been exercised on Linux with real Electron and FFmpeg. macOS is the primary product target, but native macOS/Windows testing, signing and installers remain pending. Some imported codecs cannot play in Chromium; automatic playback proxies are not implemented. Video selection uses seconds and is not frame-exact for variable-frame-rate sources.
+This preview has been exercised on Linux with real Electron and FFmpeg. macOS is the primary product target, but native macOS/Windows testing, signing and installers remain pending. Generate a playback proxy for codecs Chromium cannot decode. A decoded-frame PTS index assists stepping; the browser seek and re-encoded export are still not guaranteed frame-exact for every VFR/rotation/HDR source.
 
-## Implemented and planned
+## Implemented capabilities
 
-- Library with thumbnails, search, grid/list and playback.
-- Character / scene / prop / sound cards with editing, tags, covers and linked media.
-- Time-range annotations, optional rectangular region, entity links, review state and study notes.
-- Collections, encrypted metadata export, checked media copies and transactional import.
-- Actual MP4 clip and edge-reference export, progress/cancellation and provenance sidecars.
+- Character / actor / scene / prop / sound assets, cross-episode metadata and typed attributes.
+- Custom field templates; observed / interpreted / invented labels; confidence, review, polygon/box drawing and keyframe tracks.
+- Multi-lane timeline, interval looping, frame-time indexing, source jumps, conjunctive search and visual candidate matching.
+- Events, evidence relationships and state changes; typed branching stories, playable preview and graph diagnostics.
+- Shot detection, waveform extraction, local OCR, optical-flow tracking and HOG human-detection suggestions.
+- Clip, edge, fixed/moving crop, PNG frame and WAV audio export; atomic batch exports.
+- Local MiDaS depth and bundled MediaPipe pose/mask reference adapters; optional local Depth Anything and faster-whisper adapters.
+- Encrypted `.cbox` graph exchange, full/trimmed source profiles, JSONL/SRT/COCO, story JSON/RenPy/Godot export.
+- Verified source relinking, playback proxies, project backup/restore, persistent undo/redo and task history.
 
-Depth, pose and segmentation models are **not installed or implemented**; the UI reports them unavailable. Automatic tracking, transcription, waveform editing, frame-accurate timelines and training-format adapters remain planned. Edge detection is not depth estimation.
+The optional inference environment is separate from the Electron dependencies. Follow [local model setup](docs/LOCAL_MODELS.md). Models never download silently during inference. Missing dependencies/weights show a specific unavailable reason. Transcription requires local faster-whisper weights; speech inference has not yet been validated in this environment. Detection/tracking and visual similarity provide candidates, not reliable identity recognition.
 
-**`.cbox` encrypts metadata only; external media remains plaintext.** Transfer the entire exported folder. The desktop schema is `cutbox.desktop/0.1`; the earlier Python `cutbox.prototype/0.1` experiment is distinct and is not interchangeable. Formats remain experimental; keep source backups.
+**`.cbox` encrypts metadata only; external media remains plaintext.** Desktop schema `cutbox.desktop/0.2` imports 0.1 packages; the earlier Python `cutbox.prototype/0.1` experiment remains distinct. Transfer the whole exported folder. Project backups and dataset exports are plaintext. Story adapters export narrative logic; connect media separately in the target engine.
+
+History is bounded to 30 metadata snapshots. Large libraries, full transform lineage, multiparty speech diarization, automatic identity re-identification, temporal depth quality, signed installers and macOS/Windows hardware remain outside current verification. See the [capability and validation record](docs/VALIDATION.md).
 
 ## Design and validation
 
@@ -40,7 +46,7 @@ Depth, pose and segmentation models are **not installed or implemented**; the UI
 
 ```sh
 npm run check
-npm run test:desktop  # requires a graphical display; Linux CI can use Xvfb
+npm run test:desktop:all  # requires a graphical display; Linux CI can use Xvfb
 ```
 
 `npm run dev` serves a renderer design preview only; native operations require Electron. After renderer edits, rebuild with `npm run build` and launch with `npm run desktop`.

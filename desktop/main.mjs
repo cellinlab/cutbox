@@ -3,15 +3,21 @@ import { Worker } from 'node:worker_threads';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join, extname, basename } from 'node:path';
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { stat, readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { randomUUID } from 'node:crypto';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 if (process.env.CUTBOX_DATA_DIR) app.setPath('userData', process.env.CUTBOX_DATA_DIR);
 protocol.registerSchemesAsPrivileged([{ scheme: 'cutbox-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
-let window, worker, closed = false, workerError;
+let window, worker, closed = false, quitting = false, workerError;
 const pending = new Map(), jobs = new Map();
+let jobsPath, jobSave = Promise.resolve();
+function persistJobs() {
+  if (!jobsPath) return;
+  const data = JSON.stringify([...jobs.values()].slice(-100));
+  jobSave = jobSave.catch(() => {}).then(async () => { await writeFile(`${jobsPath}.tmp`, data, { mode: 0o600 }); await rename(`${jobsPath}.tmp`, jobsPath); });
+}
 function backend(method, input, id = randomUUID()) {
   if (workerError) return Promise.reject(workerError);
   return new Promise((resolve, reject) => {
@@ -20,11 +26,13 @@ function backend(method, input, id = randomUUID()) {
   });
 }
 function emit(job) {
-  jobs.set(job.id, job);
+  jobs.set(job.id, { ...job, updatedAt: new Date().toISOString() });
+  if (jobs.size > 100) { const oldest = [...jobs.values()].find(item => item.status !== 'running'); if (oldest) jobs.delete(oldest.id); }
+  if (job.status !== 'running' || job.progress === 0) persistJobs();
   if (window && !window.isDestroyed()) window.webContents.send('cutbox:job', job);
 }
 async function task(label, method, input) {
-  const id = randomUUID(), job = { id, label, status: 'running', progress: 0, cancellable: method === 'exportReference' };
+  const id = randomUUID(), job = { id, label, status: 'running', progress: 0, cancellable: true };
   emit(job);
   try {
     const result = await backend(method, input, id);
@@ -52,7 +60,7 @@ async function mediaResponse(request) {
     const url = new URL(request.url);
     if (url.hostname !== 'asset' || !['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 403 });
     const id = decodeURIComponent(url.pathname.slice(1));
-    const record = await backend('media', { id, thumbnail: url.searchParams.get('kind') === 'thumbnail' });
+    const record = await backend('media', { id, thumbnail: url.searchParams.get('kind') === 'thumbnail', original: url.searchParams.get('kind') === 'original' });
     if (!record.path) return new Response(null, { status: 404 });
     const info = await stat(record.path);
     if (!info.isFile()) return new Response(null, { status: 404 });
@@ -73,7 +81,14 @@ async function mediaResponse(request) {
   } catch { return new Response(null, { status: 404 }); }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+await mkdir(app.getPath('userData'), { recursive: true });
+jobsPath = join(app.getPath('userData'), 'jobs.json');
+try {
+  const previous = JSON.parse(await readFile(jobsPath, 'utf8'));
+  if (Array.isArray(previous)) for (const item of previous.slice(-100)) if (typeof item.id === 'string') jobs.set(item.id, item.status === 'running' ? { ...item, status: 'failed', error: '上次进程中断；请重新运行任务。', cancellable: false } : item);
+} catch (error) { if (error.code !== 'ENOENT') console.warn('任务历史未能读取'); }
+persistJobs();
 worker = new Worker(new URL('./backend-worker.mjs', import.meta.url), { workerData: { directory: app.getPath('userData'), ffmpegPath: process.env.CUTBOX_FFMPEG, ffprobePath: process.env.CUTBOX_FFPROBE } });
 worker.on('message', message => {
   if (message.type === 'progress') {
@@ -95,30 +110,77 @@ worker.on('exit', code => {
   pending.clear();
 });
 protocol.handle('cutbox-media', mediaResponse);
-for (const name of ['snapshot', 'capabilities', 'saveEntity', 'deleteEntity', 'saveAnnotation', 'deleteAnnotation', 'saveCollection']) handle(name, input => backend(name, input));
+for (const name of ['snapshot','capabilities','saveEntity','deleteEntity','saveAnnotation','saveAnnotations','deleteAnnotation','saveCollection','deleteCollection','saveTemplate','deleteTemplate','saveEvent','deleteEvent','saveRelation','deleteRelation','saveStory','deleteStory','undo','redo','history','updateMedia','modelStatus']) handle(name, input => backend(name, input));
 handle('importMedia', async () => {
   const result = await dialog.showOpenDialog(window, { title: '导入本地素材', properties: ['openFile', 'multiSelections'], filters: [{ name: '影音与图片', extensions: ['mp4','mov','mkv','webm','avi','wav','mp3','m4a','flac','ogg','png','jpg','jpeg','webp'] }] });
   if (result.canceled) return backend('snapshot');
   return task('导入素材', 'importMedia', result.filePaths);
 });
 handle('exportReference', async input => {
-  if (!input || !['clip', 'edges'].includes(input.mode)) throw new Error('不支持的参考配方');
-  const result = await dialog.showSaveDialog(window, { title: input.mode === 'edges' ? '导出边缘参考' : '导出片段', defaultPath: `cutbox-${input.mode}.mp4`, filters: [{ name: 'MP4', extensions: ['mp4'] }] });
+  if (!input || !['clip','edges','crop','frame','audio','depth','pose','mask'].includes(input.mode)) throw new Error('不支持的参考配方');
+  const extension = input.mode === 'frame' ? 'png' : input.mode === 'audio' ? 'wav' : 'mp4';
+  const result = await dialog.showSaveDialog(window, { title: '导出参考素材', defaultPath: `cutbox-${input.mode}.${extension}`, filters: [{ name: extension.toUpperCase(), extensions: [extension] }] });
   if (result.canceled || !result.filePath) return { cancelled: true };
-  return task(input.mode === 'edges' ? '生成边缘参考' : '导出片段', 'exportReference', { mediaId: input.mediaId, start: input.start, end: input.end, mode: input.mode, outputPath: result.filePath });
+  return task(input.mode === 'edges' ? '生成边缘参考' : '导出片段', 'exportReference', { mediaId: input.mediaId, start: input.start, end: input.end, mode: input.mode, options: input.options, outputPath: result.filePath });
 });
 handle('exportPackage', async input => {
   if (!input || typeof input.password !== 'string' || input.password.length < 12) throw new Error('请使用至少12字符的口令。');
   const result = await dialog.showOpenDialog(window, { title: '选择素材包保存位置（会新建子文件夹）', properties: ['openDirectory', 'createDirectory'] });
   if (result.canceled) return { cancelled: true };
   const directory = join(result.filePaths[0], `CutBox-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 6)}`);
-  return task('导出素材包', 'exportPackage', { directory, password: input.password, entityIds: input.entityIds, collectionId: input.collectionId });
+  return task('导出素材包', 'exportPackage', { directory, password: input.password, entityIds: input.entityIds, collectionId: input.collectionId, profile: input.profile });
 });
 handle('importPackage', async input => {
   if (!input || typeof input.password !== 'string') throw new Error('需要口令');
   const result = await dialog.showOpenDialog(window, { title: '导入 CBox 素材包', properties: ['openFile'], filters: [{ name: 'CBox', extensions: ['cbox'] }] });
   if (result.canceled) return backend('snapshot');
   return task('导入素材包', 'importPackage', { path: result.filePaths[0], password: input.password });
+});
+handle('jobs', () => [...jobs.values()].reverse());
+handle('searchAnnotations', input => backend('searchAnnotations', input));
+handle('findSimilar', input => task('寻找视觉相似候选', 'findSimilar', input));
+handle('checkMedia', () => task('校验素材', 'checkMedia'));
+handle('analyzeMedia', input => task('分析素材', 'analyzeMedia', { mediaId: input.mediaId, kind: input.kind, options: input.options }));
+handle('createProxy', id => task('生成播放代理', 'createProxy', id));
+handle('relinkMedia', async id => {
+  const result = await dialog.showOpenDialog(window, { title: '选择原素材的新位置（内容必须一致）', properties: ['openFile'] });
+  return result.canceled ? backend('snapshot') : task('重新定位素材', 'relinkMedia', { id, path: result.filePaths[0] });
+});
+handle('backupProject', async () => {
+  const result = await dialog.showOpenDialog(window, { title: '选择项目备份位置（明文媒体和描述）', properties: ['openDirectory','createDirectory'] });
+  if (result.canceled) return { cancelled: true };
+  return task('备份项目', 'backupProject', { directory: join(result.filePaths[0], `CutBox-backup-${Date.now()}-${randomUUID().slice(0,6)}`) });
+});
+handle('restoreProject', async () => {
+  const result = await dialog.showOpenDialog(window, { title: '选择 project.cutbox-backup.json', properties: ['openFile'], filters: [{ name: 'CutBox Backup', extensions: ['json'] }] });
+  if (result.canceled) return backend('snapshot');
+  const confirm = await dialog.showMessageBox(window, { type: 'question', buttons: ['取消','恢复项目'], defaultId: 0, cancelId: 0, message: '用备份替换当前项目？', detail: '恢复前会校验媒体与引用。当前元数据保留在撤销历史中，原始素材不会删除。' });
+  return confirm.response !== 1 ? backend('snapshot') : task('恢复项目', 'restoreProject', { path: result.filePaths[0] });
+});
+handle('modelConfigure', async input => {
+  if (['device','language','ocrLanguage'].includes(input?.key)) return backend('modelConfigure', { key: input.key, value: input.value });
+  const directories = ['whisperModelPath'];
+  if (!['pythonPath','depthModelPath','poseModelPath','maskModelPath','whisperModelPath','tesseractPath'].includes(input?.key)) throw new Error('无效设置');
+  const result = await dialog.showOpenDialog(window, { title: '选择本地模型或工具', properties: [input.directory || directories.includes(input.key) ? 'openDirectory' : 'openFile'] });
+  return result.canceled ? backend('modelStatus') : backend('modelConfigure', { key: input.key, value: result.filePaths[0] });
+});
+handle('exportReferences', async input => {
+  const result = await dialog.showOpenDialog(window, { title: '选择批量参考保存位置', properties: ['openDirectory','createDirectory'] });
+  if (result.canceled) return { cancelled: true };
+  return task('批量导出参考', 'exportReferences', { annotationIds: input.annotationIds, mode: input.mode, directory: join(result.filePaths[0], `CutBox-references-${Date.now()}-${randomUUID().slice(0,6)}`) });
+});
+handle('exportDataset', async input => {
+  if (!['jsonl','coco','srt'].includes(input?.format)) throw new Error('不支持的导出格式');
+  const result = await dialog.showOpenDialog(window, { title: '选择数据集保存位置', properties: ['openDirectory','createDirectory'] });
+  if (result.canceled) return { cancelled: true };
+  return task('导出数据集', 'exportDataset', { directory: join(result.filePaths[0], `CutBox-${input.format}-${Date.now()}-${randomUUID().slice(0,6)}`), format: input.format, collectionId: input.collectionId, profile: input.profile });
+});
+handle('exportStory', async input => {
+  const extension = { json: 'json', renpy: 'rpy', godot: 'gd' }[input?.format];
+  if (!extension) throw new Error('不支持的故事格式');
+  const result = await dialog.showSaveDialog(window, { title: '导出互动故事', defaultPath: `cutbox-story.${extension}`, filters: [{ name: 'Story', extensions: [extension] }] });
+  if (result.canceled || !result.filePath) return { cancelled: true };
+  return task('导出互动故事', 'exportStory', { storyId: input.storyId, format: input.format, path: result.filePath });
 });
 handle('cancelJob', async id => { if (jobs.get(id)?.status === 'running') return backend('cancel', id); return false; });
 Menu.setApplicationMenu(null);
@@ -134,8 +196,27 @@ app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) creat
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', event => {
   if (closed) return;
-  event.preventDefault(); closed = true;
-  backend('close').catch(() => {}).finally(() => worker.terminate().finally(() => app.quit()));
+  event.preventDefault();
+  if (quitting) return;
+  quitting = true;
+  let finished = false, timer;
+  const finish = async () => {
+    if (finished) return;
+    finished = true; clearTimeout(timer);
+    await worker.terminate().catch(() => {});
+    await jobSave.catch(() => {});
+    closed = true; app.quit();
+  };
+  const askIfSlow = async () => {
+    if (finished) return;
+    const answer = await dialog.showMessageBox({ type: 'question', buttons: ['继续等待','强制退出'], defaultId: 0, cancelId: 0,
+      message: '后台正在停止并清理文件', detail: '大型文件复制可能需要时间。强制退出可能留下未完成的临时文件；已保存的项目数据不会因此删除。' });
+    if (finished) return;
+    if (answer.response === 1) await finish();
+    else timer = setTimeout(askIfSlow, 30000);
+  };
+  timer = setTimeout(askIfSlow, 30000);
+  backend('close').catch(() => {}).finally(finish);
 });
 
 });

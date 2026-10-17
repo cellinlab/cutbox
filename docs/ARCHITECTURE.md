@@ -1,25 +1,42 @@
 # 架构与技术决策
 
-状态：Electron 第一条开发切片已实现；高级媒体精度、模型与发行架构仍是目标设计。当前验证环境是 Linux 云工作区，不能据此宣称 macOS 安装包、Apple Silicon 性能或跨平台发行已通过。
+状态：Electron 0.2 开发版本已实现下列模块。当前验证环境是 Linux 云工作区；功能测试与本地模型运行不能代替 macOS 安装包、Apple Silicon 性能或跨平台发行验收。
 
 ## 当前实际实现
 
 | 模块 | 文件 | 已实现边界 |
 | --- | --- | --- |
-| 桌面主进程 | `desktop/main.mjs`、`desktop/preload.cjs` | 原生文件选择、窄 IPC、只按已入库媒体 ID 提供文件流；渲染器 sandbox/contextIsolation，关闭 Node 集成，禁止导航和新窗口 |
-| 界面 | `src/` | 素材库、角色/场景/道具/声音资产、标注、基础拉片笔记、集合、会话任务列表 |
-| 后台协调 | `desktop/backend-worker.mjs` | Node Worker 持有领域数据库，调用媒体进程与包导入导出，退出时等待活动任务收尾 |
-| 领域存储 | `desktop/domain.mjs` | `node:sqlite` DatabaseSync、WAL、schema v1；四类对象 JSON 行，事务写入与引用校验 |
-| 媒体 | `desktop/media.mjs` | FFprobe 探测、SHA-256、缩略图、FFmpeg 原片片段与边缘 MP4 导出；外部 FFmpeg/ffprobe 需可用 |
-| 交换包 | `desktop/packages.mjs` | 选定资产/集合的依赖素材复制、加密 JSON、哈希验证、托管目录导入、ID 重映射 |
+| 桌面主进程 | `desktop/main.mjs`、`desktop/preload.cjs` | 原生文件选择、窄 IPC、按已入库媒体 ID 提供源文件/代理文件流；渲染器 sandbox/contextIsolation，关闭 Node 集成，禁止任意导航和新窗口 |
+| 界面 | `src/` | 素材与角色/演员/场景/道具/声音资产、模板与属性、标注工作台、矩形/多边形绘制、关键帧、时间线、集合、关系/事件与分支故事、工具和会话任务 |
+| 后台协调 | `desktop/backend-worker.mjs` | Node Worker 持有领域数据库，协调媒体/模型子进程、包与数据集；长任务可取消，退出时等待活动任务收尾 |
+| 领域存储 | `desktop/domain.mjs` | SQLite WAL、schema v2；八类对象 JSON 行、引用与类型校验、事务、v1 迁移、持久有界 undo/redo/revisions |
+| 基础媒体 | `desktop/media.mjs` | 探测、完整哈希、缩略图；FFmpeg 片段、边缘、裁剪、PNG 帧、WAV 音频输出；外部 FFmpeg/ffprobe 需可用 |
+| 媒体分析 | `desktop/media-tools.mjs` | 镜头切分建议、波形、帧时间戳查询、代理视频；使用真实 FFmpeg/ffprobe 输出 |
+| 本地推理 | `desktop/models.mjs`、Python worker | `modelStatus`、`analyzeMedia`、`exportModelReference`；深度、姿态、分割、OCR、检测/跟踪及可配置转录适配器；缺少依赖或权重明确报错 |
+| 检索 | `desktop/search.mjs` | `searchAnnotations` 组合结构化条件，`findSimilar` 提供相似参考候选；候选不是角色身份或语义等价证明 |
+| 故事 | `desktop/story.mjs` | 纯数据图校验、类型化条件/效果、可丢弃的分支模拟、外部交换；无 eval，不改写原始观察 |
+| 交换与数据集 | `desktop/packages.mjs`、`desktop/portable.mjs` | 0.2 加密图结构、0.1 导入、依赖选择、完整/裁剪媒体、托管导入；JSONL/COCO/SRT 明文数据集 |
+| 可靠性 | `desktop/reliability.mjs` | 素材缺失/摘要检查、包含媒体的可验证快照备份、恢复、新路径发布与模型配置；领域服务校验重新关联文件身份 |
 
-当前播放直接使用 Chromium `<video>/<audio>`，不是代理或精确帧服务。时间锚点为浮点秒；画面矩形通过数值字段输入，不是跟踪或画布拖拽。参考输出重编码，保存简要来源 sidecar，但尚未记录完整工具版本、输出哈希或逐帧变换映射。原片片段可保留首条音轨，边缘参考不带音频。
+播放仍使用 Chromium `<video>/<audio>`，可引用已生成的代理；帧时间戳查询不等于完整精确帧播放服务。时间锚点仍为浮点秒，没有跨源/代理的整数 PTS 映射。画面矩形、多边形和关键帧已可编辑；算法跟踪结果仍需审核，遮挡后的角色身份不会自动被证明。
 
-本地数据默认在 Electron `userData`：`cutbox.sqlite`（及 WAL 文件）、`thumbnails/`、包导入的 `managed/<UUID>/media/`。普通导入只引用原文件。数据库和媒体任务放后台 Worker，FFmpeg 为独立子进程；Worker 仍与 Electron 属于同一应用进程，不应称为完整进程隔离。
+本地数据默认放在 Electron `userData`。普通导入引用原文件，托管包导入复制媒体；数据库和协调任务在后台 Node Worker，FFmpeg 与 Python 推理运行于独立子进程。Worker 仍与 Electron 属于同一应用进程，不是数据库进程级隔离。模型为可选配置，不要求手工标注用户先安装全部模型。
 
-现阶段没有 FTS5/向量索引、代理、波形、模型、修订历史、撤销、备份界面或持久任务队列。UI 收取完整快照，在前端按名称/标签过滤，未作大库性能承诺。深度、姿态和分割明确返回不可用。
+本轮实际验证了 MiDaS 深度、MediaPipe 自带姿态/分割模型，以及 OCR、HOG 检测和光流跟踪。Whisper 适配器已安装但没有转录模型权重，**未宣称完成真实语音推理**。模型可用性以当前机器 `modelStatus` 为准；这些验证不承诺影视长片质量、实时性或 macOS GPU 性能。
 
-媒体按 SHA-256 去重会沿用原有路径；若原路径丢失，再导入相同内容或素材包不会自动修复该路径。重新关联功能待实现。包导入可能留下未被去重记录引用的托管副本，尚无缓存/托管清理策略。
+领域 `updateMedia` 重新关联需要完整 SHA-256/大小匹配；同内容重新导入可修复已失效的源路径。`checkMedia` 报告缺失和变更。备份保存经验证的领域快照与媒体，恢复通过 `replaceSnapshot` 事务校验；不是裸拷正在使用的 SQLite WAL 文件。缓存/托管副本的自动垃圾清理仍未实现。
+
+当前仍没有 FTS5/向量索引、持久任务队列和大库分页协议。界面接收完整快照，结构化检索与相似候选不代表百万标注规模已验收。撤销历史默认保留 30 条操作（可配置 1–200），不是永久审计账本。全图导出保留八类对象；Python 早期实验与桌面应用使用不同 JSON schema。
+
+### 实际服务接口
+
+- 领域：`createDomain({directory})`、`validateSnapshot`；八类对象 CRUD、`updateMedia`、`importSnapshot`、`replaceSnapshot`、`undo`、`redo`、`history`。
+- 媒体：`importMedia`、`probeMedia`、`exportReference`；`detectScenes`、`waveform`、`frameTimestamps`、`createProxy`。
+- 模型：`modelStatus({config})`、`analyzeMedia({inputPath,task,...})`、`exportModelReference({inputPath,outputPath,mode,...})`。
+- 交换：`exportBundle({directory,password,snapshot,profile,...})`、`importBundle({path,password,directory})`、`exportDataset({directory,snapshot,format,profile,...})`。
+- 恢复：`backupProject({directory,snapshot})`、`readBackup({path,directory})`，随后由领域 `replaceSnapshot` 恢复。
+
+上述文件路径参数属于后端服务，渲染器通过原生对话框与媒体 ID 工作，不获得任意文件系统或 shell 权限。详细序列化边界见[数据模型](DATA_MODEL.md)与[CBox 格式](CBOX_FORMAT.md)。
 
 以下是不应与当前完成状态混淆的长期架构目标。
 
@@ -64,7 +81,7 @@ flowchart LR
 
 SwiftUI + AVFoundation 能更深使用 macOS 媒体能力，但 Windows/Linux UI 重做成本高。PySide6 + libmpv 利于 Python 推理开发，但发布体积、依赖隔离和复杂 UI 维护需要验证。Electron 的运行时一致性有价值，却不能自动解决 H.265/HDR、精确求帧和本机模型部署。用户已选择首版使用Electron；媒体与推理性能仍需单独验证。
 
-## 目标时间与空间模型（尚未实现）
+## 尚待完成的精确时间与空间模型
 
 - 每个 stream 保存容器 stream index、time_base 分子分母、start_pts、duration、旋转矩阵、像素宽高、SAR/DAR、色彩信息。
 - 源时间保存整数 PTS + 有理 time_base，音频区间保存 sample_start/sample_end 与采样率。半开区间 `[start,end)`；不得把显示时间码作为唯一键。
@@ -83,7 +100,7 @@ SwiftUI + AVFoundation 能更深使用 macOS 媒体能力，但 Windows/Linux UI
 
 ## 后续编辑与恢复目标
 
-领域命令以事务写入当前对象与审计记录；undo 是新修订，不删除历史。先以 SQLite 当前表 + revision log 实现，不建立全量 event-sourcing 系统。长任务完成时检查输入修订，过时结果保留为建议而不覆盖人工修改。备份使用 SQLite backup API，不裸拷正在写入的 WAL 数据库。
+领域命令以事务写入当前对象与审计记录；长期目标是让撤销也可永久审计；当前 undo/redo 移动有界历史游标，新分支会丢弃 redo 记录。当前已采用 SQLite 当前表 + 有界 revision log；永久审计和长任务修订冲突检测仍是后续目标，不建立全量 event-sourcing 系统。长任务完成时检查输入修订，过时结果保留为建议而不覆盖人工修改。备份使用 SQLite backup API，不裸拷正在写入的 WAL 数据库。
 
 导出先生成不可变 collection snapshot，再计算物化计划：成员、源范围、派生策略、预计体积、未审标注、授权缺口、去重关系、目标任务。全部完成并核对哈希才发布最终文件名。磁盘不足或取消只留下明确的 staging，不产生看似可用的集合。
 
@@ -97,6 +114,6 @@ SwiftUI + AVFoundation 能更深使用 macOS 媒体能力，但 Windows/Linux UI
 
 ## Electron进程边界
 
-Renderer启用sandbox与contextIsolation、关闭nodeIntegration；preload仅暴露窄类型化API，校验IPC发送者、参数和权限。主进程处理窗口与授权，当前数据库在后台 Node Worker，媒体运行于子进程；未来推理采用独立进程。禁止任意shell、远程页面获得Node权限；限制导航、外链与文件协议访问。SQLite单写入者，协议与领域逻辑可由CLI复用。原生模块按Electron ABI与目标架构打包验证。
+Renderer启用sandbox与contextIsolation、关闭nodeIntegration；preload仅暴露窄类型化API，校验IPC发送者、参数和权限。主进程处理窗口与授权，当前数据库在后台 Node Worker，媒体运行于子进程；推理使用独立 Python 子进程。禁止任意shell、远程页面获得Node权限；限制导航、外链与文件协议访问。SQLite单写入者，协议与领域逻辑可由CLI复用。原生模块按Electron ABI与目标架构打包验证。
 
 新增需求见[参考视频导出](REFERENCE_EXPORT.md)和[资产工作区](ASSET_WORKSPACE.md)。

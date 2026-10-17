@@ -124,7 +124,7 @@ test('late import failure rolls back every newly added record', (t) => {
   const input = structuredClone(before);
   input.media[0].sha256 = 'c'.repeat(64);
   input.collections[0].annotationIds = ['missing'];
-  assert.throws(() => domain.importSnapshot(input), /Missing import annotations reference/);
+  assert.throws(() => domain.importSnapshot(input), /Unknown annotations id/);
   assert.deepEqual(domain.snapshot(), before);
   input.collections[0].annotationIds = before.collections[0].annotationIds;
   input.media.push({ ...input.media[0] });

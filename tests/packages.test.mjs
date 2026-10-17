@@ -80,3 +80,18 @@ test('changed source content or recorded size rejects export and removes staging
   assert.deepEqual(await fs.readdir(root),before);
  }
 });
+test('0.2 graph roundtrip and dependency selection',async t=>{
+ const {root,snapshot}=await fixture(t);snapshot.templates=[{id:'t1',name:'Costume',fields:[]},{id:'t2',name:'Unrelated',fields:[]}];
+ Object.assign(snapshot.annotations[0],{templateId:'t1',words:[{start:1,end:1.5,text:'hello',confidence:0.9}],keypoints:[{index:0,x:0.2,y:0.3,z:-0.45,visibility:0.8}],values:{color:'blue'},category:'costume',epistemic:'observed',confidence:0.8,polygon:[{x:0,y:0},{x:1,y:0},{x:0,y:1}],keyframes:[{time:1,region:{x:0,y:0,width:0.5,height:0.5}}]});
+ snapshot.events=[{id:'ev1',name:'Appearance',entityIds:['e1'],annotationIds:['a1'],changes:[{entityId:'e1',key:'color',after:'blue'}]},{id:'ev2',entityIds:['e2'],annotationIds:['a2'],changes:[]}];
+ snapshot.relations=[{id:'r1',fromEntityId:'e1',toEntityId:'e2',type:'knows',evidenceAnnotationIds:['a1']}];snapshot.stories=[{id:'s1',name:'Story',nodes:[{id:'n1',mediaId:'m1',start:1,end:3,eventIds:['ev1'],choices:[]}],variables:[],startNodeId:'n1'}];
+ const out=await exportBundle({directory:path.join(root,'out'),password,snapshot});const all=await importBundle({path:out.path,password,directory:path.join(root,'all')});
+ for(const key of ['annotations','templates','events','relations','stories'])assert.deepEqual(all[key],snapshot[key]);assert.equal(all.schema,'cutbox.desktop/0.2');
+ const selected=await exportBundle({directory:path.join(root,'selected'),password,snapshot,entityIds:['e1']});const partial=await importBundle({path:selected.path,password,directory:path.join(root,'partial')});
+ assert.deepEqual(partial.templates.map(x=>x.id),['t1']);assert.deepEqual(partial.events.map(x=>x.id),['ev1']);assert.equal(partial.relations.length,0);assert.equal(partial.stories.length,1);
+});
+test('legacy desktop 0.1 import fills new arrays',async t=>{
+ const {root,snapshot}=await fixture(t),out=await exportBundle({directory:path.join(root,'out'),password,snapshot});
+ await rewrite(out.path,m=>{m.schema='cutbox.desktop/0.1';for(const k of ['templates','events','relations','stories'])delete m[k];});
+ const result=await importBundle({path:out.path,password,directory:path.join(root,'legacy')});assert.deepEqual(result.annotations,snapshot.annotations);assert.deepEqual(result.events,[]);
+});

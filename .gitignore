@@ -156,3 +156,7 @@ __pycache__/
 .pytest_cache/
 *.cbox
 .cutbox/
+
+# Optional local inference environment and model weights
+.venv-models/
+.local-models/

@@ -51,8 +51,10 @@ async function launch(directory) {
   await page.setViewportSize({ width: 1505, height: 1045 });
   await page.waitForFunction(() => Boolean(window.cutbox));
   await page.getByRole("button", { name: "导入素材", exact: true }).waitFor();
-  await page.waitForFunction(
-    () => !document.querySelector("header button")?.disabled,
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll("header button")].some(
+      (button) => button.textContent.trim() === "导入素材" && !button.disabled,
+    ),
   );
   return page;
 }
@@ -113,7 +115,7 @@ try {
   await dialog.getByLabel("名称", { exact: true }).fill("角色 A · 已编辑");
   await dialog.getByRole("button", { name: "保存资产" }).click();
   await saved(page, "edited");
-  await page.getByRole("dialog").waitFor({state:"hidden"});
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
   await page.screenshot({ path: join(screenshots, "character-assets.png") });
   await page.getByRole("button", { name: "场景", exact: true }).click();
   await page.getByRole("button", { name: "新建场景" }).click();

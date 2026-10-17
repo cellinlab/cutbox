@@ -1,6 +1,6 @@
 # 本地参考素材生成与导出
 
-状态：Electron 预览版已实现选定秒级区间的 MP4 原片参考和灰度边缘视频，带任务进度、取消及来源 sidecar。下表描述完整目标；主体跟随裁切、关键帧/序列导出、阈值调节与模型配方仍待实现。尚未接入深度等模型或在 Mac 运行验证。
+状态：0.2 已实现片段、边缘、静态／关键帧跟随裁切、PNG 帧、WAV 音频和原子批量导出；参数含宽度、帧率与边缘阈值。MiDaS 深度、MediaPipe 姿态和前景蒙版已通过真实 CPU 推理与 MP4 输出测试。深度、姿态不是身份识别；蒙版为人物前景，不能视为任意对象分割。下文为完整设计目标，完整序列／透明视频、多模型时序一致性及 Mac 实机尚待验证。
 
 ## 输出类型与实施次序
 
@@ -18,7 +18,7 @@
 
 ## 深度方案与证据
 
-2026-10-15核验官方README，未运行模型：
+以下为 2026-10-15 的官方资料调研；0.2 实测结果与本地安装方式见 [模型说明](LOCAL_MODELS.md)，不能把当时的调研结论当作当前所有模型均已验证：
 
 - [Depth Anything V2](https://github.com/DepthAnything/Depth-Anything-V2)：官方用例包含cuda/mps/cpu选择，文档链接Apple Core ML版本，提供视频运行脚本。Small模型声明Apache-2.0，Base/Large/Giant声明CC-BY-NC-4.0。优先评估Small作为Mac本地方案；Core ML转换产物的具体模型卡/许可仍需接入时核对。
 - [Video Depth Anything](https://github.com/DepthAnything/Video-Depth-Anything)：时序视频深度，提供相对/metric模型、灰度视频、NPZ/EXR输出。官方Small性能表来自A100上的32帧518×518输入；不是消费级Mac承诺。README声明Small Apache-2.0、Base/Large CC-BY-NC-4.0，具体metric权重接入前单独确认。实验streaming模式文档明确存在质量下降。

@@ -8,11 +8,11 @@ const images = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff
 const supported = new Set([...images, '.mp4', '.mov', '.mkv', '.webm', '.avi', '.m4v', '.mpeg', '.mpg', '.wav', '.mp3', '.m4a', '.aac', '.flac', '.ogg', '.opus', '.aiff']);
 const abortError = () => Object.assign(new Error('Media operation cancelled'), { name: 'AbortError' });
 
-function run(command, args, { signal, onStdout, timeoutMs = 120_000 } = {}) {
+export function runMediaProcess(command, args, { signal, onStdout, onStdoutBuffer, onStderr, capture = true, timeoutMs = 120_000 } = {}) {
   return new Promise((resolvePromise, reject) => {
     if (signal?.aborted) return reject(abortError());
     const child = spawn(command, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '', stderr = '', timer, deadline, timedOut = false;
+    let stdout = '', stderr = '', timer, deadline, timedOut = false, callbackError;
     const cancel = () => {
       if (timer) return;
       child.kill('SIGTERM');
@@ -25,18 +25,27 @@ function run(command, args, { signal, onStdout, timeoutMs = 120_000 } = {}) {
       deadline.unref();
     }
     const cleanup = () => { clearTimeout(deadline); clearTimeout(timer); signal?.removeEventListener('abort', cancel); };
-    child.stdout.on('data', data => { stdout = (stdout + data).slice(-4 * 1024 * 1024); onStdout?.(data.toString()); });
-    child.stderr.on('data', data => { stderr = (stderr + data).slice(-16000); });
+    child.stdout.on('data', data => {
+      if (capture) stdout = (stdout + data).slice(-4 * 1024 * 1024);
+      try { onStdout?.(data.toString()); onStdoutBuffer?.(data); } catch (error) { callbackError = error; cancel(); }
+    });
+    child.stderr.on('data', data => {
+      stderr = (stderr + data).slice(-16000);
+      try { onStderr?.(data.toString()); } catch (error) { callbackError = error; cancel(); }
+    });
     child.once('error', error => { cleanup(); reject(new Error(`Cannot run ${command}: ${error.message}`)); });
     child.once('close', code => {
       cleanup();
       if (signal?.aborted) reject(abortError());
+      else if (callbackError) reject(callbackError);
       else if (timedOut) reject(new Error(`${command} timed out after ${timeoutMs}ms`));
       else if (code !== 0) reject(new Error(`${command} failed (${code}): ${stderr.trim()}`));
       else resolvePromise(stdout);
     });
   });
 }
+
+const run = runMediaProcess;
 
 export async function probeMedia(filePath, { ffprobePath = 'ffprobe', signal } = {}) {
   if (signal?.aborted) throw abortError();
@@ -51,7 +60,13 @@ export async function probeMedia(filePath, { ffprobePath = 'ffprobe', signal } =
   if (!kind) throw new Error('Unsupported media: no playable video, audio or image stream');
   const duration = kind === 'image' ? 0 : Number(data.format?.duration ?? video?.duration ?? audio?.duration);
   if (!Number.isFinite(duration) || duration < 0 || (kind !== 'image' && duration === 0)) throw new Error('Media has no finite positive duration');
-  return { kind, duration, ...(video ? { width: video.width, height: video.height } : {}) };
+  // FFmpeg and desktop players apply the display matrix before annotations/crops.
+  // Quarter turns exchange dimensions; coded stream dimensions would misplace boxes.
+  const matrixRotation = video?.side_data_list?.find(item => Number.isFinite(Number(item.rotation)))?.rotation;
+  const rotation = Number(matrixRotation ?? video?.tags?.rotate ?? 0);
+  const normalizedRotation = ((rotation % 360) + 360) % 360;
+  const quarterTurn = Math.abs(normalizedRotation - 90) < 0.01 || Math.abs(normalizedRotation - 270) < 0.01;
+  return { kind, duration, ...(video ? { width: quarterTurn ? video.height : video.width, height: quarterTurn ? video.width : video.height } : {}) };
 }
 
 export async function importMedia(filePaths, { cacheDirectory, ffmpegPath = 'ffmpeg', ffprobePath = 'ffprobe', signal } = {}) {
@@ -97,41 +112,90 @@ export async function importMedia(filePaths, { cacheDirectory, ffmpegPath = 'ffm
   }
 }
 
-export async function exportReference({ inputPath, outputPath, start, end, mode, ffmpegPath = 'ffmpeg', ffprobePath = 'ffprobe', onProgress, signal }) {
+export async function exportReference({ inputPath, outputPath, start, end, mode, options = {}, ffmpegPath = 'ffmpeg', ffprobePath = 'ffprobe', onProgress, signal }) {
   if (signal?.aborted) throw abortError();
-  if (!['clip', 'edges'].includes(mode)) throw new Error(`Unsupported reference mode: ${mode}`);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) throw new Error('Invalid reference range');
+  if (!['clip', 'edges', 'crop', 'frame', 'audio'].includes(mode)) throw new Error(`Unsupported reference mode: ${mode}`);
+  if (!Number.isFinite(start) || start < 0 || (mode !== 'frame' && (!Number.isFinite(end) || end <= start))) throw new Error('Invalid reference range');
   const input = resolve(inputPath), output = resolve(outputPath);
-  if (extname(output).toLowerCase() !== '.mp4') throw new Error('Reference output must use .mp4');
+  const extension = mode === 'frame' ? '.png' : mode === 'audio' ? '.wav' : '.mp4';
+  if (extname(output).toLowerCase() !== extension) throw new Error(`Reference output must use ${extension}`);
   try { await access(output); throw new Error('Output already exists; choose a new filename'); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   const source = await probeMedia(input, { ffprobePath, signal });
-  if (source.kind !== 'video') throw new Error('Reference export requires a video source');
-  if (end > source.duration + 0.000001) throw new Error('Reference range exceeds source duration');
-  const duration = end - start;
-  const staging = join(dirname(output), `.cutbox-${randomUUID()}.mp4`);
+  if (mode === 'audio' ? source.kind === 'image' : source.kind !== 'video' && !(mode === 'frame' && source.kind === 'image')) throw new Error(mode === 'audio' ? 'Audio export requires audio or video' : 'Reference export requires a video source');
+  if (mode === 'frame' ? (source.kind === 'image' ? start !== 0 : start >= source.duration) : end > source.duration + 0.000001) throw new Error('Reference range exceeds source duration');
+  if (options.width !== undefined && (!Number.isInteger(options.width) || options.width < 16 || options.width > 4096)) throw new Error('Output width must be an integer between 16 and 4096');
+  if (options.fps !== undefined && (!Number.isFinite(options.fps) || options.fps < 1 || options.fps > 120)) throw new Error('Output fps must be between 1 and 120');
+  if (options.keyframes !== undefined) throw new Error('Pass crop keyframes as options.track');
+  const validRegion = region => region && ['x', 'y', 'width', 'height'].every(key => Number.isFinite(region[key])) && region.x >= 0 && region.y >= 0 && region.width > 0 && region.height > 0 && region.x + region.width <= 1 && region.y + region.height <= 1;
+  const track = options.track;
+  if (track !== undefined) {
+    if (mode !== 'crop' || !Array.isArray(track) || track.length < 1 || track.length > 200) throw new Error('Crop track requires 1–200 keyframes in crop mode');
+    for (let index = 0; index < track.length; index++) {
+      const frame = track[index];
+      if (!frame || !Number.isFinite(frame.time) || frame.time < start || frame.time > end || (index && frame.time <= track[index - 1].time) || !validRegion(frame.region)) throw new Error('Invalid crop track: ordered unique source times must be inside export range and rectangles normalized');
+    }
+  }
+  const crop = options.crop ?? track?.[0].region;
+  if (mode === 'crop' && !crop) throw new Error('Crop mode requires a normalized crop rectangle');
+  if (crop && !validRegion(crop)) throw new Error('Invalid normalized crop rectangle');
+  const low = options.edgeLow ?? 0.1, high = options.edgeHigh ?? 0.4;
+  if (![low, high].every(value => Number.isFinite(value) && value >= 0 && value <= 1) || low > high) throw new Error('Invalid edge thresholds');
+  const duration = mode === 'frame' ? 0 : end - start;
+  const staging = join(dirname(output), `.cutbox-${randomUUID()}${extension}`);
   let progressBuffer = '';
   const progress = value => { try { onProgress?.(value); } catch { /* Observers cannot invalidate an export. */ } };
   progress(0);
-  const filters = ['setpts=PTS-STARTPTS', ...(mode === 'edges' ? ['format=gray', 'edgedetect=low=0.1:high=0.4'] : []), 'pad=ceil(iw/2)*2:ceil(ih/2)*2'];
+  const filters = ['setpts=PTS-STARTPTS'];
+  if (track) {
+    // setpts above makes filter t relative to export start; keyframe times stay source-relative.
+    // A fixed output window follows interpolated region centers, without changing zoom.
+    const centerExpression = (position, size) => {
+      const center = frame => frame.region[position] + frame.region[size] / 2;
+      let expression = String(center(track.at(-1)));
+      for (let index = track.length - 2; index >= 0; index--) {
+        const left = track[index], right = track[index + 1];
+        const fraction = `(t-${left.time - start})/${right.time - left.time}`;
+        const interpolation = `${center(left)}+(${center(right) - center(left)})*${fraction}`;
+        expression = `if(lt(t,${right.time - start}),${interpolation},${expression})`;
+      }
+      return `if(lte(t,${track[0].time - start}),${center(track[0])},${expression})`;
+    };
+    filters.push(`crop=w=iw*${crop.width}:h=ih*${crop.height}:x='min(max(iw*(${centerExpression('x', 'width')})-ow/2,0),iw-ow)':y='min(max(ih*(${centerExpression('y', 'height')})-oh/2,0),ih-oh)'`);
+  } else if (crop) filters.push(`crop=iw*${crop.width}:ih*${crop.height}:iw*${crop.x}:ih*${crop.y}`);
+  if (mode === 'edges') filters.push('format=gray', `edgedetect=low=${low}:high=${high}`);
+  if (options.width) filters.push(`scale=${options.width}:-2`);
+  if (options.fps && mode !== 'frame') filters.push(`fps=${options.fps}`);
+  if (mode !== 'frame') filters.push('pad=ceil(iw/2)*2:ceil(ih/2)*2');
+  const args = ['-v', 'error', '-nostdin', '-n', '-ss', String(start), '-i', input];
+  if (mode !== 'frame') args.push('-t', String(duration));
+  if (mode === 'audio') args.push('-map', '0:a:0', '-vn', '-af', 'asetpts=PTS-STARTPTS', '-c:a', 'pcm_s24le');
+  else {
+    args.push('-map', '0:v:0', '-vf', filters.join(','));
+    if (mode === 'frame') args.push('-frames:v', '1', '-an', '-c:v', 'png');
+    else {
+      args.push(...(['clip', 'crop'].includes(mode) ? ['-map', '0:a:0?', '-af', 'asetpts=PTS-STARTPTS', '-c:a', 'aac'] : ['-an']));
+      args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-fps_mode', 'vfr', '-movflags', '+faststart');
+    }
+  }
+  args.push('-threads', '2', '-progress', 'pipe:1', '-nostats', staging);
   try {
-    await run(ffmpegPath, ['-v', 'error', '-nostdin', '-n', '-ss', String(start), '-i', input, '-t', String(duration), '-map', '0:v:0', ...(mode === 'clip' ? ['-map', '0:a:0?', '-af', 'asetpts=PTS-STARTPTS', '-c:a', 'aac'] : ['-an']), '-vf', filters.join(','), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-threads', '2', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', staging], {
-      signal,
-      timeoutMs: 0,
+    await run(ffmpegPath, args, {
+      signal, timeoutMs: 0,
       onStdout(chunk) {
         progressBuffer += chunk;
         const lines = progressBuffer.split('\n'); progressBuffer = lines.pop();
         for (const line of lines) if (line.startsWith('out_time_us=')) {
           const seconds = Number(line.slice(12)) / 1e6;
-          if (Number.isFinite(seconds)) progress(Math.max(0, Math.min(0.99, seconds / duration)));
+          if (Number.isFinite(seconds) && duration > 0) progress(Math.max(0, Math.min(0.99, seconds / duration)));
         }
       },
     });
     if (signal?.aborted) throw abortError();
     const result = await probeMedia(staging, { ffprobePath, signal });
-    if (result.kind !== 'video' || !result.duration) throw new Error('Export validation failed');
+    const expectedKind = mode === 'frame' ? 'image' : mode === 'audio' ? 'audio' : 'video';
+    if (result.kind !== expectedKind || (expectedKind !== 'image' && !result.duration)) throw new Error('Export validation failed');
     if (signal?.aborted) throw abortError();
-    // Both files share a filesystem. link atomically refuses an existing destination.
     await link(staging, output);
     progress(1);
     return { outputPath: output, duration: result.duration, mode };
@@ -142,5 +206,5 @@ export async function capabilities({ ffmpegPath = 'ffmpeg', ffprobePath = 'ffpro
   const [ffmpeg, ffprobe] = await Promise.all([run(ffmpegPath, ['-version']).then(() => true, () => false), run(ffprobePath, ['-version']).then(() => true, () => false)]);
   const encoders = ffmpeg ? await run(ffmpegPath, ['-hide_banner', '-encoders']).catch(() => '') : '';
   const ready = ffmpeg && ffprobe && /\blibx264\b/.test(encoders);
-  return { ffmpeg, ffprobe, clip: ready, edges: ready, depth: { available: false, reason: 'Local depth model adapter and weights are not installed.' }, pose: { available: false, reason: 'Local pose model adapter and weights are not installed.' }, mask: { available: false, reason: 'Local segmentation model adapter and weights are not installed.' } };
+  return { ffmpeg, ffprobe, clip: ready, edges: ready, crop: ready, frame: ffmpeg && ffprobe, audio: ffmpeg && ffprobe, scenes: ffmpeg && ffprobe, waveform: ffmpeg && ffprobe, proxy: ready, depth: { available: false, reason: 'Local depth model adapter and weights are not installed.' }, pose: { available: false, reason: 'Local pose model adapter and weights are not installed.' }, mask: { available: false, reason: 'Local segmentation model adapter and weights are not installed.' } };
 }

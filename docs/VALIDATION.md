@@ -1,5 +1,58 @@
 # 验证记录
 
+## 0.2 全量验收（2026-10-18）
+
+环境：Linux 云工作区、Node.js 24.19.0、Electron 44.7.2、Python 3.12、FFmpeg 7.1.5、Godot 4.6.3。Browser plugin not available，采用 Playwright 驱动真实 Electron；桌面显示为 Xvfb 1505×1045 / 1440×1000。模型环境使用仓库忽略的 `.venv-models` 和官方 MiDaS v2.1 small 权重，未将权重、用户数据或测试照片提交到 Git。
+
+### 完成的检查
+
+| 检查 | 结果与证据 |
+| --- | --- |
+| TypeScript + Vite 构建 | 通过，生产渲染包生成 |
+| Node 全量测试 | **82 项通过，0 失败、0 跳过**；使用已配置的模型解释器和深度权重 |
+| Python 格式与模板测试 | **23 项通过，0 跳过** |
+| 模型环境依赖 | `pip check` 无冲突 |
+| Electron 基础流程 | 真实导入、播放、角色/场景、区域标注、边缘视频、集合加密往返、重启持久化通过 |
+| Electron 扩展流程 | 模板必填/类型、未知置信度、实际指针框选/多边形/关键帧、撤销重做、源帧时间跳转、区间循环、AND 检索、人工接受镜头建议、波形、源校验、播放清单、JSONL、批量参考及备份通过 |
+| Electron 故事流程 | 事件/关系新增编辑、状态变化、证据定位、条件锁定→线索解锁→结局→重启、JSON 往返、错误导入不污染项目通过 |
+| 渲染检查 | 三套流程均无 pageerror；页面身份正确、非空、无框架错误层，截图已人工查看 |
+| 原生叙事导出 | Godot 实际解析/运行并验证状态；RenPy Python 辅助逻辑解析和执行通过，未运行完整 RenPy 图形播放器 |
+| 项目结构 | Markdown 链接、模板标记、MIT 与作者资产检查通过 |
+
+完整命令（权重和解释器通过环境变量或本地模型设置配置）：
+
+```sh
+CUTBOX_PYTHON="$PWD/.venv-models/bin/python" \
+CUTBOX_DEPTH_MODEL="/path/to/midas-v21-small.onnx" npm run check
+DISPLAY=:99 XDG_CACHE_HOME=/tmp/cutbox-cache \
+CUTBOX_PYTHON="$PWD/.venv-models/bin/python" \
+CUTBOX_DEPTH_MODEL="/path/to/midas-v21-small.onnx" npm run test:desktop:all
+.venv/bin/python -m unittest discover -s tests -v
+.venv-models/bin/python -m pip check
+```
+
+Node 测试包含 20 项领域、16 项媒体、10 项本地模型、15 项包与格式、4 项 Worker 集成、4 项备份、2 项搜索、9 项故事和 2 项模型边界归一化。未配置模型时，部分模型测试会明确跳过；那种结果不能代表模型已验收。当前云沙箱限制 Node 子进程测试，需要受支持的子进程执行权限，否则可能只报告文件入口成功；本次记录使用真实断言与实际进程运行结果。
+
+### 实际模型与媒体证据
+
+- Tesseract 识别合成文字；光流跟踪真实移动纹理；HOG 对空图返回空结果。
+- MiDaS 生成有空间变化的深度 MP4；MediaPipe 执行姿态与蒙版视频输出。额外正例检测到 1 人、33 个姿态点。
+- 活跃推理取消、失败导出、不覆盖已有文件及临时文件清理均有回归测试。
+- VFR 测试保留非均匀 PTS；90° 显示旋转测试核对探测尺寸、PNG 与归一化裁切；移动裁切测试验证非零入点、插值与端点保持。
+- 新旧 schema 迁移、模板编辑约束、关系引用、事务批量标注、词时间与关键点保留、有界跨重启撤销、完整图 ID 重映射、裁切后的时间/几何变换及来源锚点均已验证。
+- 模型没有提供校准置信度时保存 `null`，不会自动变成 100%。源时间估计按原媒体可用区间裁定；裁定不代表模型定位更精确。
+
+### 仍未证明的范围
+
+- macOS / Windows 真机、Apple Silicon、安装包、签名与公证；Linux Electron 测试专用 `--no-sandbox`，应用配置仍启用 renderer sandbox。
+- faster-whisper 和 Depth Anything 本地权重路径尚未端到端验证；当前环境没有这些权重。已验证的深度后端是 MiDaS。
+- 自动多人说话分离、跨镜身份重识别、任意对象分割、语义向量检索、深度时序一致性及生产级质量指标。
+- 超大库／长片压力、所有 VFR/HDR/旋转/多音轨组合、逐帧或音频样本级精确播放／导出。
+- 完整多次变换谱系、全媒体加密、独立密码格式审计、RenPy 完整图形运行时及所有外部引擎媒体接线。
+- 本地观察、玩法分支与模型建议的结构可表达这些任务，不意味着自动推断出的剧情或动作已正确。
+
+## 0.1 历史记录
+
 环境：Linux 云工作区。下面分别记录保留的 Python 格式实验和新增桌面模块验证；Linux 结果不能替代 macOS 真机与安装包验收。
 
 ## 新增桌面模块验证

@@ -6,6 +6,7 @@ import {
   type EntityInput,
   type Snapshot,
 } from "./types";
+import { AttributeFields } from "./AttributeFields";
 import { Empty, Thumb, Modal, MediaChecks } from "./ui";
 export function Assets({
   data,
@@ -15,8 +16,8 @@ export function Assets({
 }: {
   data: Snapshot;
   mutate: (fn: () => Promise<Snapshot>) => Promise<boolean>;
-  onExport: (id: string) => void;
-  onOpen: (id: string) => void;
+  onExport: (ids: string[]) => void;
+  onOpen: (id: string, start?: number) => void;
 }) {
   const [type, setType] = useState<Entity["type"]>("character");
   const [query, setQuery] = useState("");
@@ -24,6 +25,9 @@ export function Assets({
   const [detail, setDetail] = useState<string>();
   const [remove, setRemove] = useState<Entity>();
   const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [list, setList] = useState(false);
+  const [collectionName, setCollectionName] = useState("资产集合");
   const [tagText, setTagText] = useState("");
   const entities = data.entities.filter(
     (e) =>
@@ -73,6 +77,43 @@ export function Assets({
           新建{entityNames[type]}
         </button>
       </div>
+      <div className="toolbar">
+        <button onClick={() => setList(!list)}>
+          {list ? "切换网格" : "切换列表"}
+        </button>
+        <button onClick={() => setSelected(entities.map((e) => e.id))}>
+          选择当前结果
+        </button>
+        <button onClick={() => setSelected([])}>清除选择</button>
+        <button disabled={!selected.length} onClick={() => onExport(selected)}>
+          导出所选 ({selected.length})
+        </button>
+        {selected.length > 0 && (
+          <>
+            <input
+              aria-label="批量集合名称"
+              value={collectionName}
+              onChange={(e) => setCollectionName(e.target.value)}
+            />
+            <button
+              disabled={!collectionName.trim()}
+              onClick={() =>
+                void mutate(() =>
+                  window.cutbox!.saveCollection({
+                    name: collectionName,
+                    description: "从资产列表批量建立",
+                    entityIds: selected,
+                    mediaIds: [],
+                    annotationIds: [],
+                  }),
+                )
+              }
+            >
+              所选加入新集合
+            </button>
+          </>
+        )}
+      </div>
       <div className={current ? "asset-layout" : ""}>
         <section>
           {entities.length === 0 ? (
@@ -81,37 +122,53 @@ export function Assets({
               description="将分散的参考、出现片段与观察关联到同一个对象。"
             />
           ) : (
-            <div className="media-grid">
+            <div className={list ? "media-list" : "media-grid"}>
               {entities.map((e) => (
-                <button
-                  key={e.id}
-                  className={`media-card ${detail === e.id ? "selected" : ""}`}
-                  onClick={() => setDetail(e.id)}
-                >
-                  <div className="thumbnail">
-                    <Thumb
-                      media={data.media.find(
-                        (m) => m.id === (e.coverMediaId || e.mediaIds[0]),
-                      )}
+                <div className="entity-selection" key={e.id}>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      aria-label={`选择资产 ${e.name}`}
+                      checked={selected.includes(e.id)}
+                      onChange={(event) =>
+                        setSelected(
+                          event.target.checked
+                            ? [...selected, e.id]
+                            : selected.filter((id) => id !== e.id),
+                        )
+                      }
                     />
-                  </div>
-                  <div className="card-body">
-                    <strong>{e.name}</strong>
-                    <p>
-                      {e.mediaIds.length} 份参考 ·{" "}
-                      {
-                        data.annotations.filter((a) => a.entityId === e.id)
-                          .length
-                      }{" "}
-                      条标注
-                    </p>
-                    <div className="tags">
-                      {e.tags.map((t) => (
-                        <span key={t}>{t}</span>
-                      ))}
+                    选择
+                  </label>
+                  <button
+                    className={`media-card ${detail === e.id ? "selected" : ""}`}
+                    onClick={() => setDetail(e.id)}
+                  >
+                    <div className="thumbnail">
+                      <Thumb
+                        media={data.media.find(
+                          (m) => m.id === (e.coverMediaId || e.mediaIds[0]),
+                        )}
+                      />
                     </div>
-                  </div>
-                </button>
+                    <div className="card-body">
+                      <strong>{e.name}</strong>
+                      <p>
+                        {e.mediaIds.length} 份参考 ·{" "}
+                        {
+                          data.annotations.filter((a) => a.entityId === e.id)
+                            .length
+                        }{" "}
+                        条标注
+                      </p>
+                      <div className="tags">
+                        {e.tags.map((t) => (
+                          <span key={t}>{t}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -130,7 +187,7 @@ export function Assets({
                 <Pencil />
                 编辑
               </button>
-              <button onClick={() => onExport(current.id)}>
+              <button onClick={() => onExport([current.id])}>
                 <Download />
                 导出
               </button>
@@ -142,6 +199,14 @@ export function Assets({
                 <Trash2 />
               </button>
             </div>
+            <dl className="attribute-list">
+              {Object.entries(current.attributes || {}).map(([key, val]) => (
+                <div key={key}>
+                  <dt>{key}</dt>
+                  <dd>{String(val)}</dd>
+                </div>
+              ))}
+            </dl>
             <h3>关联素材</h3>
             {current.mediaIds.map((id) => {
               const m = data.media.find((x) => x.id === id);
@@ -163,7 +228,7 @@ export function Assets({
                 <button
                   className="annotation-row"
                   key={a.id}
-                  onClick={() => onOpen(a.mediaId)}
+                  onClick={() => onOpen(a.mediaId, a.start)}
                 >
                   {a.label}
                   <small>
