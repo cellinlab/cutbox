@@ -74,6 +74,7 @@ export interface Snapshot {
   events: StoryEvent[];
   relations: Relation[];
   stories: Story[];
+  productions: Production[];
 }
 export interface Job {
   id: string;
@@ -102,6 +103,16 @@ export type CollectionInput = Omit<
 > & { id?: string };
 export type AnnotationInput = Omit<Annotation, "id"> & { id?: string };
 export interface Bridge {
+  saveProduction(input: Input<Production>): Promise<Snapshot>;
+  deleteProduction(id: string): Promise<Snapshot>;
+  productionAudit(id: string): Promise<ProductionAudit>;
+  draftShotPrompt(input: { productionId: string; shotId: string }): Promise<{prompt: string; negativePrompt: string}>;
+  exportProduction(input: { productionId: string; includeClips: boolean; cropRegions?: boolean }): Promise<{path?: string; directory?: string; cancelled?: boolean}>;
+  installProductionTemplates(): Promise<Snapshot>;
+  importSubtitles(input: {mediaId: string; offset: number}): Promise<{snapshot: Snapshot; count: number; warnings: {code: string; cue?: number; message: string}[]; cancelled?: boolean}>;
+  inspectDataset(input: DatasetOptions): Promise<DatasetReport>;
+  exportTrainingDataset(input: DatasetOptions & {groupBy: 'source'|'episode'|'entity'; seed: string; ratios: {train: number; validation: number; test: number}; profile: 'full'|'trimmed'}): Promise<{path?: string; directory?: string; sampleCount?: number; cancelled?: boolean}>;
+  discoverAnnotations(input: {text?: string; tags?: string[]; mediaId?: string; entityId?: string; category?: string; reviewState?: string; epistemic?: string; series?: string; episode?: string; limit?: number; offset?: number}): Promise<{items: Annotation[]; total: number; limit: number; offset: number; hasMore: boolean; method: string}>;
   cancelJob(id: string): Promise<boolean>;
   jobs(): Promise<Job[]>;
   modelStatus(): Promise<ModelStatus>;
@@ -227,6 +238,60 @@ export const entityNames = {
 };
 
 export type Scalar = string | number | boolean;
+export interface ProductionTake {
+  id: string;
+  mediaId: string;
+  provider: string;
+  model: string;
+  prompt: string;
+  negativePrompt: string;
+  seed?: string;
+  externalTaskId?: string;
+  notes: string;
+  createdAt: string;
+}
+export interface ProductionShot {
+  id: string;
+  name: string;
+  description: string;
+  duration: number;
+  status: 'planned'|'generated'|'selected';
+  entityIds: string[];
+  annotationIds: string[];
+  prompt: string;
+  negativePrompt: string;
+  continuity: string;
+  outputMediaId?: string;
+  takes?: ProductionTake[];
+}
+export interface Production {
+  id: string;
+  name: string;
+  description: string;
+  status: 'draft'|'review'|'ready';
+  target: 'generic'|'seedance'|'libtv'|'tapnow';
+  aspectRatio: '16:9'|'9:16'|'1:1'|'4:3';
+  entityIds: string[];
+  annotationIds: string[];
+  notes: string;
+  shots: ProductionShot[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+export interface ProductionAudit {
+  productionId: string;
+  status: 'blocked'|'needs_review'|'ready';
+  summary: {shots: number; referenceAnnotations: number; entities: number; readyShots: number; linkedOutputs: number};
+  issues: {severity: 'error'|'warning'|'info'; code: string; message: string; shotId?: string; annotationId?: string; entityId?: string}[];
+  coverage: {entityId: string; name: string; type: string; referenceCount: number; acceptedCount: number; categories: string[]}[];
+}
+export interface DatasetOptions {collectionId?: string; acceptedOnly?: boolean; minConfidence?: number; requireObserved?: boolean}
+export interface DatasetReport {
+  summary: {total: number; eligible: number; excluded: number; media: number; entities: number};
+  issues: {code: string; severity: string; annotationId?: string; mediaId?: string; message: string}[];
+  samples: {id: string; annotationId: string; mediaId: string; sourceGroup: string; start: number; end: number; caption: string; tags: string[]; entityIds: string[]}[];
+  distribution: Record<string, unknown>;
+}
 export type Epistemic = "observed" | "interpreted" | "invented";
 export interface Point {
   x: number;

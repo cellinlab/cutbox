@@ -4,7 +4,7 @@ import { join, isAbsolute } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { validateStory } from './story.mjs';
 
-const TABLES = ['media', 'entities', 'annotations', 'collections', 'templates', 'events', 'relations', 'stories'];
+const TABLES = ['media', 'entities', 'annotations', 'collections', 'templates', 'events', 'relations', 'stories', 'productions'];
 const OLD = TABLES.slice(0, 4);
 const fail = message => { throw new Error(message); };
 const object = value => value && typeof value === 'object' && !Array.isArray(value) ? value : fail('Expected an object');
@@ -53,7 +53,9 @@ export function validateSnapshot(input) {
       seen.add(id); return { ...item, id };
     });
   }
-  const ref = (table, id) => data[table].find(x => x.id === string(id, `${table} id`)) ?? fail(`Unknown ${table} id: ${id}`);
+  const indexes = Object.fromEntries(TABLES.map(table=>[table,new Map(data[table].map(item=>[item.id,item]))]));
+  const refresh = table => { indexes[table]=new Map(data[table].map(item=>[item.id,item])); };
+  const ref = (table, id) => indexes[table].get(string(id, `${table} id`)) ?? fail(`Unknown ${table} id: ${id}`);
   const refs = (table, ids = []) => strings(ids, `${table} references`).map(id => ref(table, id).id);
   data.media = data.media.map(v => {
     const sha256 = string(v.sha256, 'sha256').toLowerCase();
@@ -66,6 +68,7 @@ export function validateSnapshot(input) {
     if(v.sourceAnchor!=null)r.sourceAnchor=sourceAnchor(v.sourceAnchor,true);
     return r;
   });
+  refresh('media');
   data.templates = data.templates.map(v => {
     if (!Array.isArray(v.fields) || v.fields.length > 100) fail('Template fields must be an array of at most 100');
     const seen = new Set();
@@ -80,12 +83,14 @@ export function validateSnapshot(input) {
     });
     return {id:v.id,name:string(v.name,'name'),description:string(v.description??'','description',true),fields,...stamps(v)};
   });
+  refresh('templates');
   data.entities = data.entities.map(v => {
     const r = {id:v.id,type:choice(v.type,['character','scene','prop','sound','actor'],'entity type'),name:string(v.name,'name'),description:string(v.description??'','description',true),tags:strings(v.tags??[],'tags'),mediaIds:refs('media',v.mediaIds),attributes:attributes(v.attributes),...stamps(v)};
     if (optional(v.coverMediaId)) { if (!r.mediaIds.includes(v.coverMediaId)) fail('coverMediaId must belong to mediaIds'); r.coverMediaId=v.coverMediaId; }
     if (optional(v.actorEntityId)) { if (r.type !== 'character' || ref('entities',v.actorEntityId).type !== 'actor') fail('actorEntityId requires character linked to actor'); r.actorEntityId=v.actorEntityId; }
     return r;
   });
+  refresh('entities');
   data.annotations = data.annotations.map(v => {
     const media=ref('media',v.mediaId);
     const r={id:v.id,mediaId:media.id,start:number(v.start,'start'),end:number(v.end,'end'),label:string(v.label,'label'),notes:string(v.notes??'','notes',true),reviewState:choice(v.reviewState??'accepted',['suggested','accepted','needs_review'],'reviewState'),category:string(v.category??'general','category'),epistemic:epistemic(v.epistemic),confidence:confidence(v.confidence),tags:strings(v.tags??[],'tags'),values:attributes(v.values),...stamps(v)};
@@ -139,7 +144,9 @@ export function validateSnapshot(input) {
     if(media.kind==='audio'&&(r.region||r.polygon||r.keyframes?.length||r.keypoints?.length))fail('Audio annotations cannot have image regions');
     return r;
   });
+  refresh('annotations');
   data.collections=data.collections.map(v=>({id:v.id,name:string(v.name,'name'),description:string(v.description??'','description',true),mediaIds:refs('media',v.mediaIds),entityIds:refs('entities',v.entityIds),annotationIds:refs('annotations',v.annotationIds),...stamps(v)}));
+  refresh('collections');
   data.events=data.events.map(v=>{
     const r={id:v.id,name:string(v.name,'name'),description:string(v.description??'','description',true),entityIds:refs('entities',v.entityIds),annotationIds:refs('annotations',v.annotationIds),epistemic:epistemic(v.epistemic),confidence:confidence(v.confidence),...stamps(v)};
     if(optional(v.sceneId)){if(ref('entities',v.sceneId).type!=='scene')fail('sceneId must reference a scene');r.sceneId=v.sceneId;}
@@ -148,12 +155,42 @@ export function validateSnapshot(input) {
     r.changes=(v.changes??[]).map(c=>{object(c);ref('entities',c.entityId);if(!r.entityIds.includes(c.entityId))fail('State change entity must be an event participant');return {entityId:c.entityId,key:safeKey(string(c.key,'change key')),...(c.before!==undefined?{before:scalar(c.before,'before')} : {}),after:scalar(c.after,'after')};});
     return r;
   });
+  refresh('events');
   data.relations=data.relations.map(v=>({id:v.id,fromEntityId:ref('entities',v.fromEntityId).id,toEntityId:ref('entities',v.toEntityId).id,type:string(v.type,'relation type'),description:string(v.description??'','description',true),evidenceAnnotationIds:refs('annotations',v.evidenceAnnotationIds),epistemic:epistemic(v.epistemic),confidence:confidence(v.confidence),...stamps(v)}));
+  refresh('relations');
   data.stories=data.stories.map(v=>{
     const story={...v,...stamps(v)};
     const result=validateStory(story,data);
     return result;
   });
+  refresh('stories');
+  data.productions=data.productions.map(v=>{
+    const result={id:v.id,name:string(v.name,'production name'),description:string(v.description??'','description',true),status:choice(v.status??'draft',['draft','review','ready'],'production status'),target:choice(v.target??'generic',['generic','seedance','libtv','tapnow'],'production target'),aspectRatio:choice(v.aspectRatio??'16:9',['16:9','9:16','1:1','4:3'],'aspectRatio'),entityIds:refs('entities',v.entityIds),annotationIds:refs('annotations',v.annotationIds),notes:string(v.notes??'','notes',true),...stamps(v)};
+    if(!Array.isArray(v.shots??[])||(v.shots??[]).length>10000)fail('Production shots must be an array of at most 10000');
+    const ids=new Set();
+    result.shots=(v.shots??[]).map(shot=>{
+      object(shot);const id=string(shot.id,'shot id');if(id.length>256||ids.has(id))fail('Shot IDs must be unique and at most 256 characters');ids.add(id);
+      const duration=number(shot.duration,'shot duration');if(duration<=0||duration>600)fail('Shot duration must be greater than 0 and at most 600 seconds');
+      const out={id,name:string(shot.name,'shot name'),description:string(shot.description??'','description',true),duration,status:choice(shot.status??'planned',['planned','generated','selected'],'shot status'),entityIds:refs('entities',shot.entityIds),annotationIds:refs('annotations',shot.annotationIds),prompt:string(shot.prompt??'','prompt',true),negativePrompt:string(shot.negativePrompt??'','negativePrompt',true),continuity:string(shot.continuity??'','continuity',true)};
+      if(!Array.isArray(shot.takes??[])||(shot.takes??[]).length>10000)fail('Shot takes must be an array of at most 10000');
+      const takeIds=new Set();
+      out.takes=(shot.takes??[]).map(take=>{
+        object(take);const id=string(take.id,'take id');if(id.length>256||takeIds.has(id))fail('Take IDs must be unique within each shot and at most 256 characters');takeIds.add(id);
+        const result={id,mediaId:ref('media',take.mediaId).id,createdAt:string(take.createdAt??new Date().toISOString(),'take createdAt')};
+        if(!/^\d{4}-\d{2}-\d{2}T/.test(result.createdAt)||!Number.isFinite(Date.parse(result.createdAt)))fail('Take createdAt must be an ISO timestamp');
+        for(const key of ['provider','model','prompt','negativePrompt','notes'])result[key]=string(take[key]??'',`take ${key}`,true);
+        if(take.seed!==undefined){result.seed=string(take.seed,'take seed',true);if(result.seed.length>100)fail('Take seed must be at most 100 characters');}
+        if(take.externalTaskId!==undefined)result.externalTaskId=string(take.externalTaskId,'externalTaskId',true);
+        return result;
+      });
+      if(optional(shot.outputMediaId))out.outputMediaId=ref('media',shot.outputMediaId).id;
+      if(out.status==='selected'&&!out.outputMediaId)fail('Selected shot requires outputMediaId');
+      return out;
+    });
+    if(result.status==='ready'&&(!result.shots.length||result.shots.some(shot=>!shot.prompt.trim())))fail('Ready production requires at least one shot and a prompt for every shot');
+    return result;
+  });
+  refresh('productions');
   return data;
 }
 
@@ -170,7 +207,7 @@ export function createDomain({directory,historyLimit=30}) {
   string(directory,'directory');if(!Number.isSafeInteger(historyLimit)||historyLimit<1||historyLimit>200)fail('historyLimit must be 1..200');
   mkdirSync(directory,{recursive:true});const db=new DatabaseSync(join(directory,'cutbox.sqlite'));
   const version=db.prepare('PRAGMA user_version').get().user_version;
-  if(version>2){db.close();fail('This database requires a newer version of CutBox');}
+  if(version>3){db.close();fail('This database requires a newer version of CutBox');}
   db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;');
   const tx=fn=>{db.exec('BEGIN IMMEDIATE');try{const value=fn();db.exec('COMMIT');return value;}catch(error){db.exec('ROLLBACK');throw error;}};
   const raw=()=>Object.fromEntries(TABLES.map(t=>[t,db.prepare(`SELECT data FROM ${t} ORDER BY rowid`).all().map(r=>JSON.parse(r.data))]));
@@ -178,7 +215,7 @@ export function createDomain({directory,historyLimit=30}) {
   try { tx(()=>{
     for(const t of TABLES)db.exec(`CREATE TABLE IF NOT EXISTS ${t}(id TEXT PRIMARY KEY,data TEXT NOT NULL CHECK(json_valid(data)))`);
     db.exec('CREATE TABLE IF NOT EXISTS revisions(id INTEGER PRIMARY KEY AUTOINCREMENT,operation TEXT NOT NULL,createdAt TEXT NOT NULL,before TEXT NOT NULL,after TEXT NOT NULL); CREATE TABLE IF NOT EXISTS domain_meta(key TEXT PRIMARY KEY,value INTEGER NOT NULL); INSERT OR IGNORE INTO domain_meta(key,value) VALUES (\'cursor\',0)');
-    if(version<2){write(validateSnapshot(raw()));db.exec('PRAGMA user_version=2');}
+    if(version<3){write(validateSnapshot(raw()));db.exec('PRAGMA user_version=3');}
   }); } catch(error){db.close();throw error;}
   const cursor=()=>db.prepare("SELECT value FROM domain_meta WHERE key='cursor'").get().value;
   const setCursor=id=>db.prepare("UPDATE domain_meta SET value=? WHERE key='cursor'").run(id);
@@ -197,19 +234,34 @@ export function createDomain({directory,historyLimit=30}) {
   const save=(table,input)=>mutation(`save${table}`,data=>{
     object(input);const existing=input.id===undefined?undefined:find(data,table,input.id);const now=new Date().toISOString();
     const value={...existing,...input,id:existing?.id??randomUUID(),createdAt:existing?.createdAt??now,updatedAt:now};
+    if(table==='productions' && Array.isArray(value.shots))value.shots=value.shots.map(shot=>({...object(shot),id:shot.id===undefined?randomUUID():shot.id,...(Array.isArray(shot.takes)?{takes:shot.takes.map(take=>({...object(take),id:take.id===undefined?randomUUID():take.id}))}:{})}));
     if(existing)data[table][data[table].indexOf(existing)]=value;else data[table].push(value);
     return {table,id:value.id};
   });
   const remove=(table,id,cleanup)=>mutation(`delete${table}`,data=>{find(data,table,id);cleanup?.(data);data[table]=data[table].filter(x=>x.id!==id);return {id};});
-  const mergeMedia=(data,input)=>{
+  const mergeMedia=(data,input,lookup)=>{
     const item=validateSnapshot({media:[{...input,id:input.id??randomUUID()}],entities:[],annotations:[],collections:[]}).media[0];
-    const duplicate=data.media.find(x=>x.sha256===item.sha256);
+    const duplicate=lookup?lookup.byHash.get(item.sha256):data.media.find(x=>x.sha256===item.sha256);
     if(duplicate){
       if(duplicate.size!==item.size)fail('Duplicate SHA-256 has inconsistent media size');
       if(!existsSync(duplicate.path) && existsSync(item.path)){verifyFile(item.path,duplicate);duplicate.path=item.path;delete duplicate.proxyPath;delete duplicate.thumbnailPath;if(item.thumbnailPath)duplicate.thumbnailPath=item.thumbnailPath;}
       return duplicate.id;
     }
-    if(data.media.some(x=>x.id===item.id))fail('Media id already exists');data.media.push(item);return item.id;
+    if(lookup?lookup.byId.has(item.id):data.media.some(x=>x.id===item.id))fail('Media id already exists');data.media.push(item);if(lookup){lookup.byHash.set(item.sha256,item);lookup.byId.set(item.id,item);}return item.id;
+  };
+  const pruneProductionRefs=(data,key,id)=>{
+    for(const production of data.productions){
+      let affected=false;
+      if(key==='outputMediaId'){
+        for(const shot of production.shots){
+          if(shot.outputMediaId===id){delete shot.outputMediaId;shot.status='planned';affected=true;}
+          if(shot.takes?.some(take=>take.mediaId===id)){shot.takes=shot.takes.filter(take=>take.mediaId!==id);affected=true;}
+        }
+      }else{
+        for(const record of [production,...production.shots])if(record[key].includes(id)){record[key]=record[key].filter(refId=>refId!==id);affected=true;}
+      }
+      if(affected){if(production.status==='ready')production.status='review';production.updatedAt=new Date().toISOString();}
+    }
   };
   const domain={
     snapshot:raw,
@@ -218,12 +270,14 @@ export function createDomain({directory,historyLimit=30}) {
     saveAnnotations:input=>mutation('saveAnnotations',data=>{
       const items=Array.isArray(input)?input:object(input).annotations;
       if(!Array.isArray(items)||items.length>10000)fail('annotations must be an array of at most 10000');
-      const seen=new Set();
+      const seen=new Set(), positions=new Map(data.annotations.map((item,index)=>[item.id,index]));
       for(const item of items){
-        object(item);const existing=item.id===undefined?undefined:find(data,'annotations',item.id);
+        object(item);const position=item.id===undefined?undefined:positions.get(string(item.id,'annotations id'));
+        if(item.id!==undefined&&position===undefined)fail(`Unknown annotations id: ${item.id}`);
+        const existing=position===undefined?undefined:data.annotations[position];
         if(item.id!==undefined&&seen.has(item.id))fail('Duplicate annotation update');if(item.id!==undefined)seen.add(item.id);
         const now=new Date().toISOString();const value={...existing,...item,id:existing?.id??randomUUID(),createdAt:existing?.createdAt??now,updatedAt:now};
-        if(existing)data.annotations[data.annotations.indexOf(existing)]=value;else data.annotations.push(value);
+        if(existing)data.annotations[position]=value;else data.annotations.push(value);
       }
     }),
     updateMedia:input=>mutation('updateMedia',data=>{
@@ -236,16 +290,21 @@ export function createDomain({directory,historyLimit=30}) {
     deleteEntity:id=>remove('entities',id,data=>{
       for(const a of data.annotations)if(a.entityId===id)delete a.entityId;
       for(const c of data.collections)c.entityIds=c.entityIds.filter(x=>x!==id);
+      pruneProductionRefs(data,'entityIds',id);
       // Actor links, events and relations deliberately block deletion rather than erasing evidence.
     }),
-    deleteAnnotation:id=>remove('annotations',id,data=>{for(const c of data.collections)c.annotationIds=c.annotationIds.filter(x=>x!==id);}),
+    deleteAnnotation:id=>remove('annotations',id,data=>{for(const c of data.collections)c.annotationIds=c.annotationIds.filter(x=>x!==id);pruneProductionRefs(data,'annotationIds',id);}),
+    deleteMedia:id=>remove('media',id,data=>pruneProductionRefs(data,'outputMediaId',id)),
+    deleteProduction:id=>remove('productions',id),
     deleteTemplate:id=>remove('templates',id),deleteEvent:id=>remove('events',id),deleteRelation:id=>remove('relations',id),deleteStory:id=>remove('stories',id),deleteCollection:id=>remove('collections',id),
     replaceSnapshot:input=>mutation('replaceSnapshot',data=>{const validated=validateSnapshot(input);for(const t of TABLES)data[t]=validated[t];}),
     importSnapshot:input=>mutation('importSnapshot',data=>{
       const imported=validateSnapshot(input),maps=Object.fromEntries(TABLES.map(t=>[t,new Map(imported[t].map(x=>[x.id,randomUUID()]))]));
       const map=(t,id)=>maps[t].get(id)??fail(`Missing import ${t} reference: ${id}`);
       const list=(t,ids=[])=>ids.map(id=>map(t,id));
-      for(const item of imported.media)maps.media.set(item.id,mergeMedia(data,{...item,id:maps.media.get(item.id)}));
+      const mediaLookup={byHash:new Map(),byId:new Map(data.media.map(item=>[item.id,item]))};
+      for(const item of data.media)if(!mediaLookup.byHash.has(item.sha256))mediaLookup.byHash.set(item.sha256,item);
+      for(const item of imported.media)maps.media.set(item.id,mergeMedia(data,{...item,id:maps.media.get(item.id)},mediaLookup));
       for(const t of TABLES.filter(x=>x!=='media'))for(const item of imported[t]){
         const v={...item,id:map(t,item.id)};
         if(t==='entities'){v.mediaIds=list('media',v.mediaIds);if(v.coverMediaId)v.coverMediaId=map('media',v.coverMediaId);if(v.actorEntityId)v.actorEntityId=map('entities',v.actorEntityId);}
@@ -254,6 +313,7 @@ export function createDomain({directory,historyLimit=30}) {
         if(t==='events'){v.entityIds=list('entities',v.entityIds);v.annotationIds=list('annotations',v.annotationIds);if(v.sceneId)v.sceneId=map('entities',v.sceneId);v.changes=v.changes.map(c=>({...c,entityId:map('entities',c.entityId)}));}
         if(t==='relations'){v.fromEntityId=map('entities',v.fromEntityId);v.toEntityId=map('entities',v.toEntityId);v.evidenceAnnotationIds=list('annotations',v.evidenceAnnotationIds);}
         if(t==='stories')v.nodes=v.nodes.map(n=>({...n,...(n.mediaId?{mediaId:map('media',n.mediaId)}:{}),...(n.eventIds?{eventIds:list('events',n.eventIds)}:{})}));
+        if(t==='productions'){v.entityIds=list('entities',v.entityIds);v.annotationIds=list('annotations',v.annotationIds);v.shots=v.shots.map(shot=>({...shot,id:randomUUID(),entityIds:list('entities',shot.entityIds),annotationIds:list('annotations',shot.annotationIds),...(shot.outputMediaId?{outputMediaId:map('media',shot.outputMediaId)}:{}),takes:shot.takes.map(take=>({...take,id:randomUUID(),mediaId:map('media',take.mediaId)}))}));}
         data[t].push(v);
       }
     }),
@@ -262,6 +322,6 @@ export function createDomain({directory,historyLimit=30}) {
     redo:()=>tx(()=>{const entry=db.prepare('SELECT * FROM revisions WHERE id>? ORDER BY id LIMIT 1').get(cursor());if(!entry)fail('Nothing to redo');write(validateSnapshot(JSON.parse(entry.after)));setCursor(entry.id);return raw();}),
     close:()=>db.close(),
   };
-  for(const [name,table]of Object.entries({Entity:'entities',Annotation:'annotations',Collection:'collections',Template:'templates',Event:'events',Relation:'relations',Story:'stories'}))domain[`save${name}`]=input=>save(table,input);
+  for(const [name,table]of Object.entries({Entity:'entities',Annotation:'annotations',Collection:'collections',Template:'templates',Event:'events',Relation:'relations',Story:'stories',Production:'productions'}))domain[`save${name}`]=input=>save(table,input);
   return domain;
 }

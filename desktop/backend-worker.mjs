@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { mkdir, rm, writeFile, unlink, stat } from 'node:fs/promises';
+import { mkdir, rm, writeFile, unlink, stat, open } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
@@ -12,10 +12,17 @@ import { modelStatus, analyzeMedia as analyzeModel, exportModelReference } from 
 import { exportStory } from './story.mjs';
 import { findSimilar, searchAnnotations } from './search.mjs';
 import { normalizeSuggestions } from './suggestions.mjs';
+import { auditProduction, draftShotPrompt, productionTemplates } from './production.mjs';
+import { exportProductionKit } from './production-export.mjs';
+import { inspectDataset, exportTrainingDataset } from './dataset-preparation.mjs';
+import { parseSubtitles } from './subtitles.mjs';
+import { createDiscoveryIndex } from './discovery-index.mjs';
 import { publishDirectory, backupProject, readBackup, checkMedia, verifyMedia, readModelConfig, writeModelConfig, writeNewFile } from './reliability.mjs';
 
 const root = workerData.directory;
 const domain = createDomain({ directory: root });
+const discovery = createDiscoveryIndex({path: join(root, 'discovery.sqlite')});
+let discoveryDirty = true;
 const controllers = new Map();
 const active = new Set();
 let mutationTail = Promise.resolve();
@@ -55,6 +62,37 @@ const progress = id => value => parentPort.postMessage({ type: 'progress', id, p
 const models = async () => ({ ...(await readModelConfig(root)), ffmpegPath: options.ffmpegPath });
 const methods = {
   snapshot,
+  productionAudit: id => auditProduction(snapshot(),id),
+  draftShotPrompt: input => draftShotPrompt(snapshot(),input),
+  inspectDataset: input => inspectDataset(snapshot(),input),
+  exportProduction: (input,id,signal) => exportProductionKit({...input,snapshot:snapshot(),signal,...options,onProgress:progress(id)}),
+  exportTrainingDataset: (input,id,signal) => exportTrainingDataset({...input,snapshot:snapshot(),signal,...options,onProgress:progress(id)}),
+  discoverAnnotations: input => {
+    if(discoveryDirty){discovery.replace(snapshot());discoveryDirty=false;}
+    return discovery.search(input);
+  },
+  installProductionTemplates: () => {
+    const data=snapshot(),names=new Set(data.templates.map(t=>t.name));
+    const templates=productionTemplates.filter(t=>!names.has(t.name));
+    if(templates.length)domain.importSnapshot({media:[],entities:[],annotations:[],collections:[],templates});
+    return snapshot();
+  },
+  async importSubtitles({mediaId,path,offset=0},_id,signal) {
+    const record=media(mediaId);
+    if(record.kind==='image')throw new Error('字幕需要视频或音频素材');
+    const file=await open(path,'r');let bytes;
+    try {
+      const info=await file.stat(),max=10*1024*1024;
+      if(!info.isFile()||info.size>max)throw new Error('字幕文件必须小于等于 10 MiB');
+      bytes=Buffer.alloc(max+1);let count=0;
+      while(count<bytes.length){signal.throwIfAborted();const read=await file.read(bytes,count,bytes.length-count,null);if(!read.bytesRead)break;count+=read.bytesRead;}
+      if(count>max)throw new Error('字幕文件过大');bytes=bytes.subarray(0,count);
+    } finally {await file.close();}
+    let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{throw new Error('字幕应为 UTF-8 编码，请转换后导入');}
+    const parsed=parseSubtitles(text,{mediaId,duration:record.duration,offset});
+    signal.throwIfAborted();domain.saveAnnotations({annotations:parsed.annotations});
+    return {snapshot:snapshot(),count:parsed.annotations.length,warnings:parsed.warnings};
+  },
   history: () => domain.history(),
   searchAnnotations: input => searchAnnotations(snapshot(), input),
   findSimilar: (input, _id, signal) => findSimilar(snapshot(), { mediaId: input.mediaId, limit: input.limit, ffmpegPath: options.ffmpegPath, signal }),
@@ -194,18 +232,18 @@ const methods = {
   },
 };
 const CRUD = ['saveEntity','deleteEntity','saveAnnotation','saveAnnotations','deleteAnnotation','saveCollection','deleteCollection',
-  'saveTemplate','deleteTemplate','saveEvent','deleteEvent','saveRelation','deleteRelation','saveStory','deleteStory','undo','redo'];
+  'saveTemplate','deleteTemplate','saveEvent','deleteEvent','saveRelation','deleteRelation','saveStory','deleteStory','saveProduction','deleteProduction','undo','redo'];
 for (const name of CRUD) methods[name] = input => { domain[name](input); return snapshot(); };
 methods.updateMedia = input => { // Renderer can edit episode metadata; filesystem paths require native pickers.
   domain.updateMedia({ id: input.id, ...(input.series !== undefined ? { series: input.series } : {}), ...(input.episode !== undefined ? { episode: input.episode } : {}) }); return snapshot();
 };
-const MUTATIONS = new Set([...CRUD,'updateMedia','importMedia','importPackage','relinkMedia','createProxy','restoreProject','modelConfigure']);
+const MUTATIONS = new Set([...CRUD,'updateMedia','importMedia','importPackage','relinkMedia','createProxy','restoreProject','modelConfigure','installProductionTemplates','importSubtitles']);
 parentPort.on('message', ({ id, method, input }) => {
   if (method === 'cancel') { const controller = controllers.get(input); controller?.abort(); parentPort.postMessage({ id, result: Boolean(controller) }); return; }
   if (method === 'close') {
     closing = true;
     for (const controller of controllers.values()) controller.abort();
-    Promise.allSettled([...active]).then(() => { domain.close(); parentPort.postMessage({ id, result: true }); }); return;
+    Promise.allSettled([...active]).then(() => { discovery.close(); domain.close(); parentPort.postMessage({ id, result: true }); }); return;
   }
   if (closing) { parentPort.postMessage({ id, error: 'CutBox is shutting down' }); return; }
   const controller = new AbortController(); controllers.set(id, controller);
@@ -214,6 +252,7 @@ parentPort.on('message', ({ id, method, input }) => {
       controller.signal.throwIfAborted();
       if (!Object.hasOwn(methods, method)) throw new Error('Unknown backend operation');
       const result = await methods[method](input, id, controller.signal);
+      if(MUTATIONS.has(method))discoveryDirty=true;
       parentPort.postMessage({ id, result });
     } catch (error) { parentPort.postMessage({ id, error: controller.signal.aborted ? 'Operation cancelled' : error.message }); }
     finally { controllers.delete(id); }

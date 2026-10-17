@@ -4,9 +4,10 @@ const execute = promisify(execFile);
 const tokens = (text) => new Set(String(text).toLowerCase().split(/[\s,，;；]+/).filter(Boolean));
 export function searchAnnotations(snapshot, { text = '', tags = [], category, entityId, reviewState, epistemic, series, episode } = {}) {
   const words = [...tokens(text)];
+  const mediaIndex=new Map(snapshot.media.map(m=>[m.id,m])),entityIndex=new Map(snapshot.entities.map(e=>[e.id,e]));
   return snapshot.annotations.filter(annotation => {
-    const media = snapshot.media.find(item => item.id === annotation.mediaId);
-    const entity = snapshot.entities.find(item => item.id === annotation.entityId);
+    const media = mediaIndex.get(annotation.mediaId);
+    const entity = entityIndex.get(annotation.entityId);
     const haystack = [annotation.label, annotation.notes, ...(annotation.tags || []), entity?.name, ...(entity?.tags || []), media?.name, ...Object.values(annotation.values || {})].join(' ').toLowerCase();
     return words.every(word => haystack.includes(word)) && tags.every(tag => (annotation.tags || []).includes(tag))
       && (!category || annotation.category === category) && (!entityId || annotation.entityId === entityId)

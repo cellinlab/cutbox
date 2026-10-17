@@ -1,42 +1,64 @@
 # 架构与技术决策
 
-状态：Electron 0.2 开发版本已实现下列模块。当前验证环境是 Linux 云工作区；功能测试与本地模型运行不能代替 macOS 安装包、Apple Silicon 性能或跨平台发行验收。
+状态：Electron 0.3 开发预览。当前验证在 Linux；模型或合成样本测试不能替代 macOS／Windows 真机、安装包和硬件性能验收。当前实现、已验收与后续目标分别记录，测试证据见[验证记录](VALIDATION.md)。
 
 ## 当前实际实现
 
-| 模块 | 文件 | 已实现边界 |
+| 模块 | 文件 | 已实现职责与边界 |
 | --- | --- | --- |
-| 桌面主进程 | `desktop/main.mjs`、`desktop/preload.cjs` | 原生文件选择、窄 IPC、按已入库媒体 ID 提供源文件/代理文件流；渲染器 sandbox/contextIsolation，关闭 Node 集成，禁止任意导航和新窗口 |
-| 界面 | `src/` | 素材与角色/演员/场景/道具/声音资产、模板与属性、标注工作台、矩形/多边形绘制、关键帧、时间线、集合、关系/事件与分支故事、工具和会话任务 |
-| 后台协调 | `desktop/backend-worker.mjs` | Node Worker 持有领域数据库，协调媒体/模型子进程、包与数据集；长任务可取消，退出时等待活动任务收尾 |
-| 领域存储 | `desktop/domain.mjs` | SQLite WAL、schema v2；八类对象 JSON 行、引用与类型校验、事务、v1 迁移、持久有界 undo/redo/revisions |
-| 基础媒体 | `desktop/media.mjs` | 探测、完整哈希、缩略图；FFmpeg 片段、边缘、裁剪、PNG 帧、WAV 音频输出；外部 FFmpeg/ffprobe 需可用 |
-| 媒体分析 | `desktop/media-tools.mjs` | 镜头切分建议、波形、帧时间戳查询、代理视频；使用真实 FFmpeg/ffprobe 输出 |
-| 本地推理 | `desktop/models.mjs`、Python worker | `modelStatus`、`analyzeMedia`、`exportModelReference`；深度、姿态、分割、OCR、检测/跟踪及可配置转录适配器；缺少依赖或权重明确报错 |
-| 检索 | `desktop/search.mjs` | `searchAnnotations` 组合结构化条件，`findSimilar` 提供相似参考候选；候选不是角色身份或语义等价证明 |
-| 故事 | `desktop/story.mjs` | 纯数据图校验、类型化条件/效果、可丢弃的分支模拟、外部交换；无 eval，不改写原始观察 |
-| 交换与数据集 | `desktop/packages.mjs`、`desktop/portable.mjs` | 0.2 加密图结构、0.1 导入、依赖选择、完整/裁剪媒体、托管导入；JSONL/COCO/SRT 明文数据集 |
-| 可靠性 | `desktop/reliability.mjs` | 素材缺失/摘要检查、包含媒体的可验证快照备份、恢复、新路径发布与模型配置；领域服务校验重新关联文件身份 |
+| 桌面主进程 | `desktop/main.mjs`、`desktop/preload.cjs` | 原生选择器、窄 IPC、按入库媒体 ID 提供源／代理文件流；sandbox、contextIsolation、禁止 Node 集成与任意导航 |
+| 界面 | `src/` | 资产、模板、标注、集合、故事、制作准备、数据集检查／检索、模型工具与任务记录 |
+| 后台协调 | `desktop/backend-worker.mjs` | Node Worker 独占领域数据库，协调媒体／模型子进程、导入与导出；长任务可取消，关闭时等待收尾 |
+| 领域存储 | `desktop/domain.mjs` | SQLite WAL、schema v3、九类对象、v1／v2 迁移、全图校验和事务、有界快照历史；Map 索引减少引用校验中的重复线性查找 |
+| 基础媒体 | `desktop/media.mjs` | 探测、摘要、缩略图、原片／边缘／裁剪／帧／音频输出；外部 FFmpeg 与 ffprobe 必须可用 |
+| 媒体分析 | `desktop/media-tools.mjs` | 镜头切分建议、波形、帧时间索引与代理；音画共享时间原点，避免独立归零抹掉声画起始偏移 |
+| 字幕 | `desktop/subtitles.mjs` | UTF-8 SRT／WebVTT 解析、偏移、范围检查、文本净化和说话人标签；批量事务入库为待审核，置信度未知；字幕排版不导入 |
+| 本地推理 | `desktop/models.mjs`、Python worker | OCR、HOG、光流、深度、姿态、蒙版、转写适配器与模型设置；缺少本地依赖／权重不伪造结果 |
+| 检索 | `desktop/search.mjs`、`desktop/discovery-index.mjs` | 组合筛选、视觉候选；独立 SQLite FTS5 trigram 缓存提供分页，短词回退子串扫描 |
+| 故事 | `desktop/story.mjs` | 类型化图校验、条件／原子效果、可丢弃预演、结构诊断与外部叙事交换；不执行用户代码、不回写原片观察 |
+| 制作准备 | `desktop/production.mjs`、`desktop/production-export.mjs` | 项目／镜头检查、证据整理提示词、五套模板、takes 与选用输出；导出设定集、镜头清单、参考与总览图，仅本地人工交接 |
+| 训练数据准备 | `desktop/dataset-preparation.mjs` | 质量／筛选检查、按已知来源／剧集／实体成组划分、带原始与重基准标注的 JSONL、报告与数据集卡 |
+| 交换 | `desktop/packages.mjs`、`desktop/portable.mjs` | `.cbox` 0.3 全图交换、0.1／0.2／0.3 导入、完整／裁剪媒体、托管导入；JSONL／COCO／SRT 明文适配 |
+| 恢复 | `desktop/reliability.mjs` | 媒体缺失／摘要检查、含媒体的验证备份、恢复、新目录发布与模型配置；重新关联要求原内容身份匹配 |
 
-播放仍使用 Chromium `<video>/<audio>`，可引用已生成的代理；帧时间戳查询不等于完整精确帧播放服务。时间锚点仍为浮点秒，没有跨源/代理的整数 PTS 映射。画面矩形、多边形和关键帧已可编辑；算法跟踪结果仍需审核，遮挡后的角色身份不会自动被证明。
+## 进程、文件与时间
 
-本地数据默认放在 Electron `userData`。普通导入引用原文件，托管包导入复制媒体；数据库和协调任务在后台 Node Worker，FFmpeg 与 Python 推理运行于独立子进程。Worker 仍与 Electron 属于同一应用进程，不是数据库进程级隔离。模型为可选配置，不要求手工标注用户先安装全部模型。
+本地数据默认位于 Electron `userData`。普通导入引用原文件，包导入复制到托管目录。数据库在后台 Node Worker，FFmpeg／Python 运行于独立子进程；Worker 与 Electron 主进程共享同一进程地址空间，不是数据库进程级隔离。渲染器只发送类型化命令和媒体 ID，文件位置来自原生选择器或经过验证的导入，不获得任意 shell 能力。
 
-本轮实际验证了 MiDaS 深度、MediaPipe 自带姿态/分割模型，以及 OCR、HOG 检测和光流跟踪。Whisper 适配器已安装但没有转录模型权重，**未宣称完成真实语音推理**。模型可用性以当前机器 `modelStatus` 为准；这些验证不承诺影视长片质量、实时性或 macOS GPU 性能。
+播放器使用 Chromium `<video>/<audio>`；不能播放的编码可生成代理。探测器按容器／流共同起点计算时长，帧索引同时返回源时间与相对共同起点的时间。FFmpeg 导出与代理保持各流相对 PTS，波形和音频导出可补齐延迟音轨起始空白。以上修复特定容器起点和延迟音频问题，**不等于完整整数 PTS／音频样本编辑模型**，也不保证任意 VFR、HDR、旋转或多轨媒体的逐帧重建。
 
-领域 `updateMedia` 重新关联需要完整 SHA-256/大小匹配；同内容重新导入可修复已失效的源路径。`checkMedia` 报告缺失和变更。备份保存经验证的领域快照与媒体，恢复通过 `replaceSnapshot` 事务校验；不是裸拷正在使用的 SQLite WAL 文件。缓存/托管副本的自动垃圾清理仍未实现。
+重新关联要求完整 SHA-256／大小匹配；同内容重新导入可修复失效位置。备份复制校验后的媒体和领域快照，恢复经 `replaceSnapshot` 事务处理，不裸拷运行中的 WAL 文件。缓存与托管媒体的自动垃圾回收仍未实现。
 
-当前仍没有 FTS5/向量索引、持久任务队列和大库分页协议。界面接收完整快照，结构化检索与相似候选不代表百万标注规模已验收。撤销历史默认保留 30 条操作（可配置 1–200），不是永久审计账本。全图导出保留八类对象；Python 早期实验与桌面应用使用不同 JSON schema。
+## 检索和规模边界
+
+`cutbox.sqlite` 是领域数据源；`discovery.sqlite` 是可重建缓存，包含搜索文档、结构化索引与 FTS5 trigram 表。首次检索或相关写操作使缓存失效后，后台从当前完整快照重建。长度至少三个字符的查询词使用 trigram 召回，所有词再按字面子串检查；较短词包含短中文词，使用子串回退。条件与标签按 AND 组合，返回 `items/total/limit/offset/hasMore`，不把查询输入当作任意 SQL／FTS 表达式执行。
+
+分页减少单次检索返回量，Map 查找减少领域引用校验开销；但 App 仍接收完整图快照，写入仍克隆、校验与持久化完整元数据图。默认保存 30 次操作前后快照（可配置 1–200），不是永久审计账本。10,000 条合成标注测试覆盖部分查找、导入与分组逻辑，**不是端到端大库流式架构或长片性能保证**。向量索引、增量索引更新、对象级订阅与完全虚拟化列表仍未实现。
+
+## 制作与数据集交接
+
+制作项目保存镜头、实体／证据引用、连续性与当前需求；每条 take 保存绑定媒体、平台／模型、实际提交提示词快照、字符串 seed、外部任务 ID 与本地记录时间。`outputMediaId` 单独记录当前选用结果。制作资料包是明文：设定集 JSON／Markdown、镜头 CSV、提示词、参考帧／音频／可选片段、最多前 32 份视觉参考的总览图、候选输出、审阅报告与文件摘要。引用别名仅标识本地文件，不是厂商 API 参数。
+
+Seedance／SeeDance、LibTV、TapNow 当前只用于人工交接标签，不连接账户、不上传、不调用生成接口。工业流程一手资料与无法核实的平台信息见[制作调研](research/PRODUCTION_PIPELINE.md)和 [AIGC 工作流](AIGC_WORKFLOW.md)；没有声称实现 OTIO、OpenAssetIO、USD、OCIO 或 IMF。
+
+训练准备的元数据检查不访问文件；实际导出再校验素材摘要。所有分组方式都合并已知同源内容／裁剪祖先，剧集／实体模式增加保守连接；种子决定可复现分配，比例是目标而非固定配额。行记录同时保留原始标注与导出后时间重基准标注。生产计划和 takes 图不混入训练快照。具体谱系歧义、空分组与格式边界见[数据集准备](DATASET_PREPARATION.md)。
+
+## 可选模型与可靠输出
+
+本轮实际使用过 MiDaS 深度、MediaPipe 姿态／分割及 OCR、HOG、光流。faster-whisper 与 Depth Anything 的指定本地权重路径尚未端到端验证。模型可用性来自本机检测，不能由适配器存在推断质量、实时速度或 macOS GPU 支持。
+
+长任务传播取消和子进程失败，输出先写 staging，校验后发布到未占用位置。素材包、制作包和数据集输出均不覆盖现有目录。媒体复制与数据库提交不是同一原子事务，失败清理由协调层承担；任务记录不等于可恢复执行的持久调度队列。
 
 ### 实际服务接口
 
-- 领域：`createDomain({directory})`、`validateSnapshot`；八类对象 CRUD、`updateMedia`、`importSnapshot`、`replaceSnapshot`、`undo`、`redo`、`history`。
-- 媒体：`importMedia`、`probeMedia`、`exportReference`；`detectScenes`、`waveform`、`frameTimestamps`、`createProxy`。
-- 模型：`modelStatus({config})`、`analyzeMedia({inputPath,task,...})`、`exportModelReference({inputPath,outputPath,mode,...})`。
-- 交换：`exportBundle({directory,password,snapshot,profile,...})`、`importBundle({path,password,directory})`、`exportDataset({directory,snapshot,format,profile,...})`。
-- 恢复：`backupProject({directory,snapshot})`、`readBackup({path,directory})`，随后由领域 `replaceSnapshot` 恢复。
+- 领域：`createDomain`、`validateSnapshot`、九类对象 CRUD、`importSnapshot`、`replaceSnapshot`、`undo/redo/history`。
+- 媒体／字幕：`importMedia`、`probeMedia`、`exportReference`、`detectScenes`、`waveform`、`frameTimestamps`、`createProxy`、`parseSubtitles`。
+- 发现：`createDiscoveryIndex().replace/search`；桥接 `discoverAnnotations`。
+- 制作：`auditProduction`、`draftShotPrompt`、`exportProductionKit`；五套模板由显式安装命令添加。
+- 数据集：`inspectDataset`、`splitDataset`、`exportTrainingDataset`。
+- 交换／恢复：`exportBundle/importBundle`、`exportDataset`、`backupProject/readBackup`。
 
-上述文件路径参数属于后端服务，渲染器通过原生对话框与媒体 ID 工作，不获得任意文件系统或 shell 权限。详细序列化边界见[数据模型](DATA_MODEL.md)与[CBox 格式](CBOX_FORMAT.md)。
+后端路径参数由主进程对话框和服务校验提供。序列化细节见[数据模型](DATA_MODEL.md)与[CBox 格式](CBOX_FORMAT.md)。
 
 以下是不应与当前完成状态混淆的长期架构目标。
 

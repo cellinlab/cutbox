@@ -2,9 +2,11 @@
 
 文档同时记录当前模型与长期目标；未明确列入「当前实现」的本体、关系和锚点仍是设计。数据库行号不作为公开对象 ID。
 
-## 当前实现：schema v2
+## 当前实现：schema v3
 
-`desktop/domain.mjs` 使用 SQLite `media`、`entities`、`annotations`、`collections`、`templates`、`events`、`relations`、`stories` 八张对象表，每行是 `id + JSON`，`PRAGMA user_version=2`。另有 `revisions` 保存操作前后快照，`domain_meta` 保存撤销游标。v1 数据迁移保留原 ID 和关联。引用完整性由 `validateSnapshot` 和事务保证；当前没有关系型外键、FTS5 或向量索引。
+`desktop/domain.mjs` 在 `cutbox.sqlite` 中使用 `media`、`entities`、`annotations`、`collections`、`templates`、`events`、`relations`、`stories`、`productions` 九张对象表，每行是 `id + JSON`，`PRAGMA user_version=3`。另有 `revisions` 保存操作前后快照，`domain_meta` 保存撤销游标。v1／v2 数据迁移保留原 ID 和关联。引用完整性由 `validateSnapshot` 和事务保证，校验时按表建立 Map 减少重复线性查找；当前没有关系型外键或向量索引。
+
+`discovery.sqlite` 是可重建的检索缓存，含结构化索引和 FTS5 trigram 文档表，不是另一份领域真源。至少三个字符的查询词经 trigram 召回后仍做字面子串检查，较短词用子串回退；结果分页。相关写操作后按需从完整快照重建。App 仍接收完整对象图，写入仍克隆、验证与持久化完整图；10,000 条合成标注测试不代表完整大库流式架构。
 
 | 对象 | 已持久化字段 |
 | --- | --- |
@@ -15,19 +17,40 @@
 | Template | 名称、描述、fields；字段 key/label/type/required/options/unit，类型为 text/number/boolean/select |
 | Event | 名称、描述、entityIds、annotationIds、sceneId、storyTime、epistemic/confidence、changes（entityId/key/before/after） |
 | Relation | fromEntityId、toEntityId、type、description、evidenceAnnotationIds、epistemic/confidence |
-| Story | 名称、描述、类型化 variables、startNodeId、nodes；节点引用媒体区间/事件，choices 包含条件与原子效果 |
+| Story | 名称、描述、类型化 variables、startNodeId、nodes；节点引用媒体区间/事件，保存 epistemic，choices 包含条件与原子效果 |
+| Production | 名称、描述、status、target、aspectRatio、entityIds、annotationIds、notes、shots、时间戳 |
 
 `region` 为归一化 `{x,y,width,height}`，原点左上，范围与面积校验。`polygon` 至少三个点且非零面积；`keyframes` 时间递增、唯一并位于标注范围，保存矩形。音频不接受画面几何。当前满足 `0 ≤ start ≤ end ≤ duration`；图片时长为 0，相等边界可用于点标记，视频输出要求正时长。仍没有源 PTS、样本级音频锚点或多音轨引用，不保证 VFR 逐帧准确。
 
-审核状态为 `suggested/accepted/needs_review`；认识状态独立为 `observed/interpreted/invented`，置信度为 0–1。两者不等同：接受一条分析不使它成为客观事实。模板值必须满足字段类型、必填和枚举约束；修改模板不能静默使已有标注失效。关系目前连接实体，事件因果顺序可用故事图表达，尚非任意对象关系本体。
+审核状态为 `suggested/accepted/needs_review`；认识状态独立为 `observed/interpreted/invented`，置信度为 0–1 或 `null`（未知）。历史省略值兼容默认 1，新导入字幕及未知置信度使用 `null`；不把未知显示为确定。两者不等同：接受一条分析不使它成为客观事实。故事节点默认 `invented`，引用原片不自动使分支剧情变成观察事实。模板值必须满足字段类型、必填和枚举约束；修改模板不能静默使已有标注失效。关系目前连接实体，事件因果顺序可用故事图表达，尚非任意对象关系本体。
+
+SRT／WebVTT 导入产生 `dialogue` 标注，保留字幕原时间、偏移和格式信息，标为 `observed/needs_review`、置信度未知。文本去除标记，WebVTT 说话者信息可保留，画面排版位置不转成空间几何。偏移后越界或无效字幕整批拒绝。相机／镜头、服装连续性、场景美术、声音表演、来源用途五套模板须由用户显式安装。
+
+### 制作项目、镜头与候选输出
+
+项目 `status` 为 `draft/review/ready`，`target` 为 `generic/seedance/libtv/tapnow`，画幅为 `16:9/9:16/1:1/4:3`。这些平台值只标明人工交接目标，没有账号或 API 连接。
+
+每个 `shots[]` 保存 `id/name/description/duration/status/entityIds/annotationIds/prompt/negativePrompt/continuity/outputMediaId?/takes[]`。镜头状态为 `planned/generated/selected`，选择状态必须指定结果媒体；时长大于 0、至多 600 秒是 CutBox 的字段约束，不是任何平台的生成上限。
+
+每条 take 保存 `id/mediaId/provider/model/prompt/negativePrompt/seed?/externalTaskId?/notes/createdAt`：绑定已导入的实际候选素材，提示词记录用户填写的实际提交快照；`seed` 是字符串，避免大整数丢失精度。`createdAt` 是本地记录时间，不冒充平台生成时间；未知参数留空。`outputMediaId` 独立表示镜头当前选用结果，不会覆盖其他 takes。完整输入参考快照、供应商参数回执和逐次 QC 版本仍未持久化。
+
+制作资料包把此图物化为设定集、镜头清单、提示词、带来源的参考、总览图、候选输出和摘要清单。引用别名仅指向包内文件；生成和结果回收由用户在外部工具完成。详见 [AIGC 工作流](AIGC_WORKFLOW.md)。
+
+### 写入与交换
 
 省略 ID 创建，已有 ID 更新，未知更新 ID 拒绝。引用必须存在，封面属于实体 mediaIds，角色的 actorEntityId 只能引用 actor。删除操作按依赖校验或显式清理引用，不留下悬空关系；有事件、关系等依赖时可能拒绝删除。所有写入和批量标注是事务，undo/redo 支持跨重启恢复。默认最多保存 30 次操作，可配置 1–200；分支编辑丢弃 redo，不能把有限修订记录视为永久审计。
 
-`importSnapshot` 先校验完整图再事务导入，八类对象 ID 按映射重建；模板值、演员、事件证据、故事媒体/事件引用全部重映射。媒体按 SHA-256 去重，已失效的旧路径可由相同内容的新文件修复；重新关联必须通过完整摘要与大小校验。任一无效字段或缺失引用让数据库整体回滚。`replaceSnapshot` 用于校验后整体恢复并保留快照 ID，与合并导入不同。
+`importSnapshot` 先校验完整图再事务导入，九类对象及嵌套镜头／take ID 按映射重建；模板值、演员、事件证据、故事媒体／事件以及制作项目的实体、标注、输出和 take 媒体引用全部重映射。媒体按 SHA-256 去重，已失效的旧路径可由相同内容的新文件修复；重新关联必须通过完整摘要与大小校验。任一无效字段或缺失引用让数据库整体回滚。`replaceSnapshot` 用于校验后整体恢复并保留快照 ID，与合并导入不同。
 
-桌面包使用 `cutbox.desktop/0.2`，兼容读取 0.1 的四类对象，新增数组默认为空。导出仅含白名单字段、相对素材路径，导入先验证密文、大小、哈希与依赖，再由领域服务完整校验入库。文件复制与数据库事务不是同一原子事务，调用方负责失败副本清理。
+桌面包导出 `cutbox.desktop/0.3`，兼容读取桌面 0.1／0.2／0.3，旧包缺少的新数组默认为空。导出仅含白名单字段、相对素材路径，导入先验证密文、大小、哈希与依赖，再由领域服务完整校验入库。文件复制与数据库事务不是同一原子事务，调用方负责失败副本清理。
 
 裁剪配置保留媒体和标注的 `sourceAnchor`，这里的 mediaId 是外部直接来源标识，不参与包内 ID 重映射。它保存上一步输入的区间和摘要，不是无限追溯的派生链；二次裁剪不会自动保留全部更早变换。源标注与故事时间重基准，奇数尺寸补边时几何重新归一化，详见[CBox 格式](CBOX_FORMAT.md)。
+
+### 数据集记录与切分
+
+质量检查按现有元数据评估样本，不读取源文件，也不证明语义标签准确；实际导出再校验文件摘要。训练行同时保留 `originalAnnotation` 和导出后的 `annotation`、来源锚点和相对媒体路径。裁剪后后者的时间／逐词／关键帧重基准到输出片段，前者保留原记录。训练快照不携带制作项目及 takes 图。
+
+来源、剧集、实体三种切分方式都合并已知相同内容和裁剪祖先；后两种还合并对应剧集或实体关联。种子产生与输入顺序无关的分配，比例是目标，可能出现空分组。已有且明确的多次裁剪来源可组合；谱系有歧义时保留最近无歧义锚点并警告。这些保证不能推断未知近重复或未关联角色身份，详见[数据集准备](DATASET_PREPARATION.md)。
 
 ## 以下为长期领域模型
 
@@ -92,7 +115,7 @@ CBox 是统一证据交换层，不是所有模型的训练输入。任务适配
 
 ## 保留的 Python 格式实验
 
-早期 Python CLI 仍覆盖素材相对路径/大小/SHA-256、描述列表、音频样本锚点、schema 检查、加密 JSON 与完整性回读。桌面采用上文八类对象的独立 schema；两个实验不应混用。桌面已有关键帧、实体关系、事件/故事和 JSONL/COCO/SRT 适配；完整流级锚点、任意本体关系及任务划分协议仍待实现。
+早期 Python CLI 仍覆盖素材相对路径/大小/SHA-256、描述列表、音频样本锚点、schema 检查、加密 JSON 与完整性回读。桌面采用上文九类对象的独立 schema；两个实验不应混用。桌面已有关键帧、实体关系、事件／故事、制作计划、JSONL／COCO／SRT 适配与成组训练划分；完整流级锚点、任意本体关系及更多任务格式仍待实现。
 
 ## 资产卡与派生参考扩展
 

@@ -55,7 +55,7 @@ export async function waveform({ inputPath, points = 1000, ffmpegPath = 'ffmpeg'
   let remainder = Buffer.alloc(0), sample = 0;
   const bucketSize = Math.max(1, source.duration * sampleRate / points);
   notify(onProgress, 0);
-  await runMediaProcess(ffmpegPath, ['-v', 'error', '-nostdin', '-i', inputPath, '-map', '0:a:0', '-vn', '-ac', '1', '-ar', String(sampleRate), '-c:a', 'pcm_f32le', '-f', 'f32le', 'pipe:1', '-progress', 'pipe:2'], {
+  await runMediaProcess(ffmpegPath, ['-v', 'error', '-nostdin', '-i', inputPath, '-map', '0:a:0', '-vn', '-af', `aresample=${sampleRate}:async=1:first_pts=0`, '-ac', '1', '-ar', String(sampleRate), '-c:a', 'pcm_f32le', '-f', 'f32le', 'pipe:1', '-progress', 'pipe:2'], {
     signal, timeoutMs: 0, capture: false,
     onStdoutBuffer(chunk) {
       const bytes = remainder.length ? Buffer.concat([remainder, chunk]) : chunk;
@@ -80,16 +80,16 @@ export async function frameTimestamps({ inputPath, ffprobePath = 'ffprobe', sign
   const consume = lines(line => {
       const fields = Object.fromEntries(line.split('|').filter(item => item.includes('=')).map(item => item.split('=')));
       if (!fields.best_effort_timestamp_time) return;
-      const time = Number(fields.best_effort_timestamp_time), duration = Number(fields.pkt_duration_time);
+      const sourceTime = Number(fields.best_effort_timestamp_time), time = sourceTime - source.startTime, duration = Number(fields.pkt_duration_time);
       if (!Number.isFinite(time)) return;
       if (frames.length >= 1_000_000) throw new Error('Frame index exceeds one million frames; split the source first');
-      frames.push({ index: frames.length, time, ...(Number.isFinite(duration) ? { duration } : {}) });
+      frames.push({ index: frames.length, time, sourceTime, ...(Number.isFinite(duration) ? { duration } : {}) });
       if (frames.length % 500 === 0) notify(onProgress, Math.min(0.99, Math.max(0, time / source.duration)));
     });
   await runMediaProcess(ffprobePath, ['-v', 'error', '-select_streams', 'v:0', '-show_frames', '-show_entries', 'frame=best_effort_timestamp_time,pkt_duration_time', '-of', 'compact=p=0', inputPath], { signal, timeoutMs: 0, capture: false, onStdout: consume });
   consume.flush();
   notify(onProgress, 1);
-  return { frames, timeBase: 'seconds', source: 'best_effort_timestamp_time' };
+  return { frames, timeBase: 'seconds', source: 'best_effort_timestamp_time', startTime: source.startTime };
 }
 
 export async function createProxy({ inputPath, outputPath, width = 960, fps, ffmpegPath = 'ffmpeg', ffprobePath = 'ffprobe', signal, onProgress }) {

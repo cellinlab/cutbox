@@ -1,0 +1,118 @@
+.data-workspace {
+  display: grid;
+  gap: 20px;
+}
+.data-panel {
+  border: 1px solid var(--border, #34383c);
+  border-radius: 12px;
+  padding: 22px;
+  background: var(--panel, #202326);
+  min-width: 0;
+}
+.data-panel h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 18px;
+  margin-top: 0;
+}
+.data-panel > label {
+  display: grid;
+  gap: 7px;
+  margin: 14px 0;
+}
+.data-panel > label.check {
+  display: flex;
+}
+.data-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.data-filters label {
+  display: grid;
+  gap: 7px;
+  flex: 1;
+  min-width: 120px;
+}
+.data-filters label:first-child {
+  flex: 2;
+}
+.data-results {
+  display: grid;
+  gap: 6px;
+  max-height: 400px;
+  overflow: auto;
+}
+.data-results > button {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(180px, 1fr) 140px;
+  text-align: left;
+  gap: 12px;
+  padding: 12px;
+}
+.data-results strong,
+.data-results span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.data-results small,
+.data-results span {
+  color: var(--muted, #a8abad);
+}
+.data-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted, #a8abad);
+}
+.data-preparation-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 20px;
+}
+.dataset-report {
+  border-left: 3px solid #bf9c5e;
+  padding: 12px;
+  margin: 16px 0;
+  background: #ffffff04;
+}
+.dataset-report ul {
+  padding-left: 18px;
+  max-height: 250px;
+  overflow: auto;
+}
+.dataset-report li {
+  margin: 8px 0;
+}
+.dataset-report li button {
+  display: inline;
+  padding: 2px 8px;
+  margin-left: 8px;
+}
+.dataset-report details {
+  margin: 10px 0;
+}
+.dataset-report details p {
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.data-panel hr {
+  border: 0;
+  border-top: 1px solid var(--border, #34383c);
+  margin: 24px 0;
+}
+@media (max-width: 1150px) {
+  .data-preparation-grid {
+    grid-template-columns: 1fr;
+  }
+  .data-results > button {
+    grid-template-columns: 1fr;
+  }
+  .data-panel .section-heading {
+    flex-wrap: wrap;
+  }
+}

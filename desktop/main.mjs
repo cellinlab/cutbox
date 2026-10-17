@@ -137,6 +137,22 @@ handle('importPackage', async input => {
   return task('导入素材包', 'importPackage', { path: result.filePaths[0], password: input.password });
 });
 handle('jobs', () => [...jobs.values()].reverse());
+for(const name of ['saveProduction','deleteProduction','productionAudit','draftShotPrompt','inspectDataset','discoverAnnotations','installProductionTemplates']) handle(name,input=>backend(name,input));
+handle('importSubtitles',async input=>{
+  const result=await dialog.showOpenDialog(window,{title:'导入 UTF-8 字幕（SRT / WebVTT）',properties:['openFile'],filters:[{name:'Subtitles',extensions:['srt','vtt']}]});
+  if(result.canceled)return {snapshot:await backend('snapshot'),count:0,warnings:[],cancelled:true};
+  return task('导入字幕','importSubtitles',{mediaId:input.mediaId,offset:input.offset,path:result.filePaths[0]});
+});
+handle('exportProduction',async input=>{
+  const result=await dialog.showOpenDialog(window,{title:'选择创作资料包保存位置',properties:['openDirectory','createDirectory']});
+  if(result.canceled)return {cancelled:true};
+  return task('导出创作资料包','exportProduction',{productionId:input.productionId,includeClips:input.includeClips===true,cropRegions:input.cropRegions===true,directory:join(result.filePaths[0],`CutBox-production-${Date.now()}-${randomUUID().slice(0,6)}`)});
+});
+handle('exportTrainingDataset',async input=>{
+  const result=await dialog.showOpenDialog(window,{title:'选择训练数据准备包保存位置',properties:['openDirectory','createDirectory']});
+  if(result.canceled)return {cancelled:true};
+  return task('准备训练数据集','exportTrainingDataset',{collectionId:input.collectionId,acceptedOnly:input.acceptedOnly,minConfidence:input.minConfidence,requireObserved:input.requireObserved,groupBy:input.groupBy,seed:input.seed,ratios:input.ratios,profile:input.profile,directory:join(result.filePaths[0],`CutBox-training-${Date.now()}-${randomUUID().slice(0,6)}`)});
+});
 handle('searchAnnotations', input => backend('searchAnnotations', input));
 handle('findSimilar', input => task('寻找视觉相似候选', 'findSimilar', input));
 handle('checkMedia', () => task('校验素材', 'checkMedia'));

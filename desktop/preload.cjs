@@ -5,6 +5,7 @@ const invoke = async (name, input) => {
   return result.value;
 };
 const api = {};
+for (const name of ['saveProduction','deleteProduction','productionAudit','draftShotPrompt','exportProduction','inspectDataset','exportTrainingDataset','discoverAnnotations','installProductionTemplates','importSubtitles']) api[name]=input=>invoke(name,input);
 for (const name of ['snapshot', 'capabilities', 'importMedia', 'saveEntity', 'deleteEntity', 'saveAnnotation', 'deleteAnnotation', 'saveCollection', 'exportReference', 'exportPackage', 'importPackage', 'cancelJob','jobs','saveAnnotations','deleteCollection','saveTemplate','deleteTemplate','saveEvent','deleteEvent','saveRelation','deleteRelation','saveStory','deleteStory','undo','redo','history','updateMedia','checkMedia','relinkMedia','createProxy','backupProject','restoreProject','analyzeMedia','exportDataset','modelStatus','modelConfigure','exportStory','findSimilar','searchAnnotations','exportReferences']) {
   api[name] = input => invoke(name, input);
 }

@@ -28,6 +28,8 @@ import { Editor } from "./Editor";
 import { Templates } from "./Templates";
 import { ToolsWorkspace } from "./ToolsWorkspace";
 import { StoryWorkspace } from "./StoryWorkspace";
+import { ProductionWorkspace } from "./ProductionWorkspace";
+import { DataWorkspace } from "./DataWorkspace";
 import { Search as SearchFilters, emptyFilters, matchesMedia } from "./Search";
 import { Collections } from "./Collections";
 const nav = [
@@ -38,6 +40,8 @@ const nav = [
   ["collections", "素材集合", Folder],
   ["templates", "标注模板", Tags],
   ["story", "故事与关系", GitBranch],
+  ["production", "创作准备", Clapperboard],
+  ["data", "数据准备", Database],
   ["tools", "分析与维护", Settings],
   ["jobs", "任务中心", ListChecks],
 ] as const;
@@ -50,6 +54,8 @@ const descriptions = {
   jobs: "查看本地处理与导出进度。",
   templates: "定义字段与规则，重复使用你的标注方式。",
   story: "关联证据、事件与人物，构建可游玩的分支。",
+  production: "把原片证据整理成新镜头的资产、参考与连续性要求。",
+  data: "检索片段、导入字幕、检查质量并准备可追溯的数据集。",
   tools: "本地分析、模型配置、可靠备份与修订历史。",
 };
 export default function App() {
@@ -63,6 +69,7 @@ export default function App() {
     events: [],
     relations: [],
     stories: [],
+    productions: [],
   });
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
@@ -453,6 +460,8 @@ export default function App() {
                   open={open}
                 />
               )}
+              {page === "production" && <ProductionWorkspace data={data} mutate={mutate} run={run} open={open} />}
+              {page === "data" && <DataWorkspace data={data} mutate={mutate} run={run} open={open} />}
               {page === "jobs" &&
                 (jobs.length === 0 ? (
                   <Empty

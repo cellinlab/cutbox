@@ -6,10 +6,10 @@ import { promisify } from 'node:util';
 const scrypt = promisify(scryptCallback);
 const MAGIC = Buffer.from([67,66,79,88,0,1,0,0]);
 const MAX = 8 * 1024 * 1024;
-const SCHEMA = 'cutbox.desktop/0.2';
+const SCHEMA = 'cutbox.desktop/0.3';
 const assert = (ok, message) => { if (!ok) throw new Error(message); };
-const lists = ['media','entities','annotations','collections','templates','events','relations','stories'];
-const extensions=['templates','events','relations','stories'];
+const lists = ['media','entities','annotations','collections','templates','events','relations','stories','productions'];
+const extensions=['templates','events','relations','stories','productions'];
 function normalized(snapshot) { return {...snapshot,...Object.fromEntries(extensions.map(k=>[k,snapshot[k]??[]]))}; }
 const pick = (obj, keys) => Object.fromEntries(keys.filter(k => obj[k] !== undefined).map(k => [k, obj[k]]));
 async function key(password,salt) {
@@ -61,6 +61,7 @@ function validate(snapshot) {
   for(const event of snapshot.events) { refs(event.entityIds??[],'entities'); refs(event.annotationIds??[],'annotations'); if(event.sceneId)refs([event.sceneId],'entities'); for(const change of event.changes??[])refs([change.entityId],'entities'); }
   for(const relation of snapshot.relations) { refs([relation.fromEntityId,relation.toEntityId],'entities');refs(relation.evidenceAnnotationIds??[],'annotations'); }
   for(const story of snapshot.stories) { assert(Array.isArray(story.nodes),'Invalid story nodes');for(const node of story.nodes) { if(node.mediaId)refs([node.mediaId],'media');refs(node.eventIds??[],'events'); } }
+  for(const p of snapshot.productions) { refs(p.entityIds??[],'entities');refs(p.annotationIds??[],'annotations');assert(Array.isArray(p.shots),'Invalid production shots');for(const shot of p.shots){refs(shot.entityIds??[],'entities');refs(shot.annotationIds??[],'annotations');if(shot.outputMediaId)refs([shot.outputMediaId],'media');for(const take of shot.takes??[])refs([take.mediaId],'media');} }
   return snapshot;
 }
 export function selectSnapshot(snapshot,entityIds,collectionId) {
@@ -84,6 +85,7 @@ export function selectSnapshot(snapshot,entityIds,collectionId) {
     templates:snapshot.templates.filter(t=>snapshot.annotations.some(x=>a.has(x.id)&&x.templateId===t.id)),events,
     relations:snapshot.relations.filter(r=>e.has(r.fromEntityId)&&e.has(r.toEntityId)&&(r.evidenceAnnotationIds??[]).every(id=>a.has(id))),
     stories:snapshot.stories.filter(story=>story.nodes.some(n=>n.mediaId||n.eventIds?.length)&&story.nodes.every(n=>(!n.mediaId||m.has(n.mediaId))&&(n.eventIds??[]).every(id=>eventIds.has(id))))};
+  result.productions=snapshot.productions.filter(p=>((p.entityIds??[]).length+(p.annotationIds??[]).length+p.shots.reduce((n,s)=>n+(s.entityIds??[]).length+(s.annotationIds??[]).length+(s.outputMediaId?1:0)+(s.takes??[]).length,0)>0)&&(p.entityIds??[]).every(id=>e.has(id))&&(p.annotationIds??[]).every(id=>a.has(id))&&p.shots.every(s=>(s.entityIds??[]).every(id=>e.has(id))&&(s.annotationIds??[]).every(id=>a.has(id))&&(!s.outputMediaId||m.has(s.outputMediaId))&&(s.takes??[]).every(t=>m.has(t.mediaId))));
   return structuredClone(result);
 }
 async function hash(file) {
@@ -122,6 +124,7 @@ export function portableMetadata(data) {
     templates:data.templates.map(x=>pick(x,['id','name','description','fields','createdAt','updatedAt'])),
     events:data.events.map(x=>pick(x,['id','name','description','entityIds','annotationIds','sceneId','storyTime','epistemic','confidence','changes','createdAt','updatedAt'])),
     relations:data.relations.map(x=>pick(x,['id','fromEntityId','toEntityId','type','description','evidenceAnnotationIds','epistemic','confidence','createdAt','updatedAt'])),
+    productions:(data.productions??[]).map(x=>({...pick(x,['id','name','description','status','target','aspectRatio','entityIds','annotationIds','notes','createdAt','updatedAt']),shots:x.shots.map(s=>({...pick(s,['id','name','description','duration','status','entityIds','annotationIds','prompt','negativePrompt','continuity','outputMediaId']),takes:(s.takes??[]).map(t=>pick(t,['id','mediaId','provider','model','prompt','negativePrompt','seed','externalTaskId','notes','createdAt']))}))})),
     stories:data.stories.map(x=>pick(x,['id','name','description','variables','startNodeId','nodes','createdAt','updatedAt']))};
 }
 export async function prepareMedia(data,temp,{profile='full',signal,ffmpegPath,ffprobePath,onProgress}={}) {
@@ -138,11 +141,13 @@ export async function prepareMedia(data,temp,{profile='full',signal,ffmpegPath,f
     const annotations=data.annotations.filter(a=>a.mediaId===item.id);
     // Include story intervals in the same bounding interval so their references remain playable.
     const nodes=data.stories.flatMap(s=>s.nodes.filter(n=>n.mediaId===item.id));
-    if(profile==='trimmed'&&item.kind!=='image'&&annotations.length&&nodes.every(n=>Number.isFinite(n.start)&&Number.isFinite(n.end))) {
+    if(profile==='trimmed'&&!(data.productions??[]).some(p=>p.shots.some(s=>s.outputMediaId===item.id||(s.takes??[]).some(t=>t.mediaId===item.id)))&&item.kind!=='image'&&annotations.length&&nodes.every(n=>Number.isFinite(n.start)&&Number.isFinite(n.end))) {
       const intervals=[...annotations,...nodes];const start=Math.min(...intervals.map(a=>a.start)),end=Math.max(...intervals.map(a=>a.end));
       if(end>start&&(start>0||end<item.duration)) {
         const {exportReference,probeMedia}=await import('./media.mjs'); ext=item.kind==='audio'?'.wav':'.mp4'; materialized=temporary+ext;
         await exportReference({inputPath:temporary,outputPath:materialized,start,end,mode:item.kind==='audio'?'audio':'clip',signal,ffmpegPath,ffprobePath,onProgress});
+        const original=await probeMedia(temporary,{ffprobePath,signal});
+        if(original.width)Object.assign(item,{width:original.width,height:original.height});
         const encoded=await probeMedia(materialized,{ffprobePath,signal});
         const scaleX=item.width&&encoded.width?item.width/encoded.width:1,scaleY=item.height&&encoded.height?item.height/encoded.height:1;
         const scaleRegion=r=>({...r,x:r.x*scaleX,y:r.y*scaleY,width:r.width*scaleX,height:r.height*scaleY});
@@ -172,7 +177,7 @@ export async function importBundle({path:boxPath,password,directory}) {
   const stat=await fs.lstat(boxPath); assert(stat.isFile()&&!stat.isSymbolicLink()&&stat.size<=MAX+52,'Invalid envelope file');
   const handle=await fs.open(boxPath,'r'); let bytes;
   try { bytes=Buffer.alloc(MAX+53); const result=await handle.read(bytes,0,bytes.length,0); bytes=bytes.subarray(0,result.bytesRead); } finally { await handle.close(); }
-  const decoded=await unseal(bytes,password); assert([SCHEMA,'cutbox.desktop/0.1'].includes(decoded.schema),'Unsupported manifest schema');const manifest=normalized(decoded);validate(manifest);
+  const decoded=await unseal(bytes,password); assert([SCHEMA,'cutbox.desktop/0.2','cutbox.desktop/0.1'].includes(decoded.schema),'Unsupported manifest schema');const manifest=normalized(decoded);validate(manifest);
   const root=path.dirname(boxPath), files=[]; const known=new Map();
   for(const item of manifest.media) {
     assert(Number.isSafeInteger(item.size)&&item.size>=0&&/^[a-f0-9]{64}$/.test(item.sha256),'Invalid media integrity metadata');

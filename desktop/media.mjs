@@ -58,7 +58,12 @@ export async function probeMedia(filePath, { ffprobePath = 'ffprobe', signal } =
   const audio = data.streams?.find(stream => stream.codec_type === 'audio');
   const kind = images.has(extension) && video ? 'image' : video ? 'video' : audio ? 'audio' : null;
   if (!kind) throw new Error('Unsupported media: no playable video, audio or image stream');
-  const duration = kind === 'image' ? 0 : Number(data.format?.duration ?? video?.duration ?? audio?.duration);
+  const timedStreams = (data.streams ?? []).filter(stream => ['video', 'audio'].includes(stream.codec_type) && !stream.disposition?.attached_pic);
+  const streamStarts = timedStreams.map(stream => Number(stream.start_time)).filter(Number.isFinite);
+  const formatStart = Number(data.format?.start_time);
+  const startTime = Number.isFinite(formatStart) ? formatStart : streamStarts.length ? Math.min(...streamStarts) : 0;
+  const streamEnds = timedStreams.filter(stream => Number.isFinite(Number(stream.start_time)) && Number.isFinite(Number(stream.duration))).map(stream => Number(stream.start_time) + Number(stream.duration) - startTime);
+  const duration = kind === 'image' ? 0 : streamEnds.length === timedStreams.length && streamEnds.length ? Math.max(...streamEnds) : Number(data.format?.duration ?? video?.duration ?? audio?.duration);
   if (!Number.isFinite(duration) || duration < 0 || (kind !== 'image' && duration === 0)) throw new Error('Media has no finite positive duration');
   // FFmpeg and desktop players apply the display matrix before annotations/crops.
   // Quarter turns exchange dimensions; coded stream dimensions would misplace boxes.
@@ -66,7 +71,7 @@ export async function probeMedia(filePath, { ffprobePath = 'ffprobe', signal } =
   const rotation = Number(matrixRotation ?? video?.tags?.rotate ?? 0);
   const normalizedRotation = ((rotation % 360) + 360) % 360;
   const quarterTurn = Math.abs(normalizedRotation - 90) < 0.01 || Math.abs(normalizedRotation - 270) < 0.01;
-  return { kind, duration, ...(video ? { width: quarterTurn ? video.height : video.width, height: quarterTurn ? video.width : video.height } : {}) };
+  return { kind, duration, startTime, ...(video ? { width: quarterTurn ? video.height : video.width, height: quarterTurn ? video.width : video.height } : {}) };
 }
 
 export async function importMedia(filePaths, { cacheDirectory, ffmpegPath = 'ffmpeg', ffprobePath = 'ffprobe', signal } = {}) {
@@ -146,9 +151,11 @@ export async function exportReference({ inputPath, outputPath, start, end, mode,
   let progressBuffer = '';
   const progress = value => { try { onProgress?.(value); } catch { /* Observers cannot invalidate an export. */ } };
   progress(0);
-  const filters = ['setpts=PTS-STARTPTS'];
+  // FFmpeg's input seek normalizes all streams against one source origin.
+  // Keep their relative PTS; resetting each stream separately loses delayed audio.
+  const filters = ['null'];
   if (track) {
-    // setpts above makes filter t relative to export start; keyframe times stay source-relative.
+    // Input seeking makes filter t relative to export start; keys stay source-relative.
     // A fixed output window follows interpolated region centers, without changing zoom.
     const centerExpression = (position, size) => {
       const center = frame => frame.region[position] + frame.region[size] / 2;
@@ -169,12 +176,12 @@ export async function exportReference({ inputPath, outputPath, start, end, mode,
   if (mode !== 'frame') filters.push('pad=ceil(iw/2)*2:ceil(ih/2)*2');
   const args = ['-v', 'error', '-nostdin', '-n', '-ss', String(start), '-i', input];
   if (mode !== 'frame') args.push('-t', String(duration));
-  if (mode === 'audio') args.push('-map', '0:a:0', '-vn', '-af', 'asetpts=PTS-STARTPTS', '-c:a', 'pcm_s24le');
+  if (mode === 'audio') args.push('-map', '0:a:0', '-vn', '-af', 'aresample=async=1:first_pts=0', '-c:a', 'pcm_s24le');
   else {
     args.push('-map', '0:v:0', '-vf', filters.join(','));
     if (mode === 'frame') args.push('-frames:v', '1', '-an', '-c:v', 'png');
     else {
-      args.push(...(['clip', 'crop'].includes(mode) ? ['-map', '0:a:0?', '-af', 'asetpts=PTS-STARTPTS', '-c:a', 'aac'] : ['-an']));
+      args.push(...(['clip', 'crop'].includes(mode) ? ['-map', '0:a:0?', '-c:a', 'aac'] : ['-an']));
       args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-fps_mode', 'vfr', '-movflags', '+faststart');
     }
   }

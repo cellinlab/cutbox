@@ -1,6 +1,6 @@
 {
   "name": "cutbox",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "main": "desktop/main.mjs",
@@ -14,8 +14,10 @@
     "test:desktop": "node tests/desktop.e2e.mjs",
     "check": "npm run build && npm test && python3 scripts/check_template.py --project",
     "test:desktop:expansion": "node tests/desktop-expansion.e2e.mjs",
-    "test:desktop:all": "npm run test:desktop && npm run test:desktop:expansion && npm run test:desktop:story",
-    "test:desktop:story": "node tests/story.e2e.mjs"
+    "test:desktop:all": "npm run test:desktop && npm run test:desktop:expansion && npm run test:desktop:story && npm run test:desktop:production && npm run test:desktop:data",
+    "test:desktop:story": "node tests/story.e2e.mjs",
+    "test:desktop:production": "node tests/production.e2e.mjs",
+    "test:desktop:data": "node tests/data-preparation.e2e.mjs"
   },
   "dependencies": {
     "react": "19.3.1",

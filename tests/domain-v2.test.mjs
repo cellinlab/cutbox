@@ -35,7 +35,7 @@ test('schema v1 migrates metadata without losing IDs or associations',t=>{
   db.exec('PRAGMA user_version=1');db.close();
   const domain=createDomain({directory});t.after(()=>{domain.close();rmSync(directory,{recursive:true,force:true});});
   const snap=domain.snapshot();assert.equal(snap.annotations[0].id,'a');assert.equal(snap.annotations[0].entityId,'e');assert.equal(snap.annotations[0].notes,'原始');assert.equal(snap.annotations[0].epistemic,'observed');assert.deepEqual(snap.templates,[]);assert.deepEqual(domain.history().entries,[]);
-  const inspect=new DatabaseSync(join(directory,'cutbox.sqlite'));assert.equal(inspect.prepare('PRAGMA user_version').get().user_version,2);inspect.close();
+  const inspect=new DatabaseSync(join(directory,'cutbox.sqlite'));assert.equal(inspect.prepare('PRAGMA user_version').get().user_version,3);inspect.close();
 });
 
 test('typed templates and edits reject invalid existing annotation values atomically',t=>{
